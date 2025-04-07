@@ -2,5 +2,4 @@
 
 ---
 
-LLVM compilation + ONNX runtime + Primitives 
-
+LLVM compilation + ONNX runtime + Primitives
