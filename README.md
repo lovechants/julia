@@ -2,7 +2,9 @@
 
 ---
 Skeleton development environment for BearAI machine learning and stats library
+
 All associated papers + derivations included (where applicable)
+
 LLVM compilation + ONNX runtime + Primitives
 
 ## Testing 
