@@ -12,15 +12,34 @@ LLVM compilation + ONNX runtime + Primitives
 > All tests are run with pytest
 
 ```bash
-~/julia pytest [args]
+~/julia pytest -vvs [additional args]
 ```
 ## Current TODO 
-- [ ] Finish IR + LLVM compilation
-- [ ] Set up ONNX 
+- [x] Finish IR 
+    - [ ] Fix test `shape_test::matmul`
+    - [ ] Zig bindings -> and optimize function 
+- [ ] Finish LLVM -> Actually optimize it  
+- [x] Set up ONNX 
 - [ ] Backend support 
     - [ ] CUDA 
     - [ ] OpenCL 
-    - [ ] Metal -> Same shader (swift/obj c) dynamic lib needed (afaik)
+    - [ ] Metal (arm) -> Same shader (swift/obj c) dynamic lib needed (afaik)
+    - [ ] CLANG 
+    - [ ] ZIG 
+    - [ ] WASM 
+    - [ ] TPU/NPU?
+    - [ ] x86
 - [ ] Pure NN primitives 
     - [ ] Layers 
-    - [ ] More optimizers
+    - [ ] Optimizers 
+        - [ ] Muon 
+        - [ ] Adam 
+        - [ ] AdamW 
+        - [ ] RMSProp 
+        - [ ] LAMB 
+        - [ ] AdaGrad
+        - [ ] ReLu + Derivations 
+        - [ ] Sigmoid 
+- [ ] Profiling tools 
+    - [ ] Easy Vis + Metric tracking 
+- [ ] Model Zoo + Stats 

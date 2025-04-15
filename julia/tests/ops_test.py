@@ -43,9 +43,6 @@ def test_sigmoid():
     print("Sigmoid grad:", x.grad.data)
 
 if __name__ == "__main__":
-    print("=== Test add and mul ===")
     test_add_mul()
-    print("\n=== Test linear regression ===")
     test_linear_regression()
-    print("\n=== Test sigmoid ===")
     test_sigmoid()
