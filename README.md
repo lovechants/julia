@@ -18,28 +18,29 @@ LLVM compilation + ONNX runtime + Primitives
 - [x] Finish IR 
     - [ ] Fix test `shape_test::matmul`
     - [ ] Zig bindings -> and optimize function 
-- [ ] Finish LLVM -> Actually optimize it  
+- [x] Finish LLVM -> Actually optimize it  
+- [ ] Fix CLANG setup
 - [x] Set up ONNX 
 - [ ] Backend support 
     - [ ] CUDA 
     - [ ] OpenCL 
     - [ ] Metal (arm) -> Same shader (swift/obj c) dynamic lib needed (afaik)
-    - [ ] CLANG 
+    - [x] CLANG 
     - [ ] ZIG 
     - [ ] WASM 
     - [ ] TPU/NPU?
     - [ ] x86
 - [ ] Pure NN primitives 
     - [ ] Layers 
-    - [ ] Optimizers 
-        - [ ] Muon 
-        - [ ] Adam 
-        - [ ] AdamW 
-        - [ ] RMSProp 
-        - [ ] LAMB 
-        - [ ] AdaGrad
-        - [ ] ReLu + Derivations 
-        - [ ] Sigmoid 
+    - [x] Optimizers 
+        - [x] Muon 
+        - [x] Adam 
+        - [x] AdamW 
+        - [x] RMSProp 
+        - [x] LAMB 
+        - [x] AdaGrad
+        - [x] ReLu + Derivations 
+        - [x] Sigmoid 
 - [ ] Profiling tools 
     - [ ] Easy Vis + Metric tracking 
-- [ ] Model Zoo + Stats 
+- [ ] Model Zoo + Stats
