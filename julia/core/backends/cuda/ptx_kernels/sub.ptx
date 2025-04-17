@@ -1,0 +1,45 @@
+.version 8.0
+.target sm_89 //4090 sm_61 is 1080 
+.address_size 64
+
+.visible .entry add_vectors(
+  .param .u64 a_ptr, 
+  .param .u64 b_ptr, 
+  .param .u64 c_ptr, 
+  .param .u32 n
+) { 
+  .reg .u64 %addr_a, %addr_b, %addr_c;
+  .reg .u32 %r<5>;
+  .reg .f32 %f<4>;
+
+  ld.param.u64 %addr_a, [a_ptr];
+  ld.param.u64 %addr_b, [b_ptr];
+  ld.param.u64 %addr_c, [c_ptr];
+  ld.param.u32 %r1, [n];
+
+  mov.u32 %r2, %tid.x; //tid thread id -> move the built in to the thread id in the block copied to r2
+  mov.u32 %r3, %ntid.x; // ntid number of threads per block -> copy that to r3
+  mov.u32 %r4, %ctaid.x;
+  mad.lo.u32 %r2, %r4, %r3, %r2;
+
+  // Bounds check 
+  setp.ge.u32 %p1, %r2, %r1;
+  @%p1 bra $end; // Predicate == true if r2 (thread id) >= r1 (array size) || if true branch to end 
+
+  // Multiply the thread ID (r2) by 4 -> widen the results to 64 bits to be store in r3
+  // Add the offset to each array pointer to calculate the memory address for the thread elements in the arrays
+  mul.wide.u32 %r3, %r2, 4 // 4 is the size of a float in bytes 
+  add.u64 %addr_a, %addr_a, %r3;
+  add.u64 %addr_b, %addr_b, %r3;
+  add.u64 %addr_c, %addr_c, %r3; 
+
+  ld.global.f32 %f1, [%addr_a];
+  ld.global.f32 %f2, [%addr_b];
+
+  // Subtraction OPERATION 
+  sub.f32 %f3, %f1, %f2; 
+  
+  st.global.f32 [%addr_c], %f3;
+  $end:
+    ret;
+}
