@@ -140,7 +140,7 @@ class IRToTensor:
         output_tensors = [self.node_to_tensor_map[node.id] for node in graph.outputs]
         return output_tensors[0] if len(output_tensors) == 1 else output_tensors
         
-    def _process_node(self, node: IRNode) -> Tensor:
+    def _process_node(self, node: IRNode) -> Tensor: #TODO move this to registry implementation instead of hardcoding the operations (especially with new ops up)
         """Process an IR node and convert to tensor operations"""
         # If already processed
         if node.id in self.node_to_tensor_map:
