@@ -1,5 +1,5 @@
 import numpy as np
-from julia.core.tensor import Function, Tensor
+from julia.core.tensor import Function, Tensor, _ensure_tensor
 """
 Operations
 """
@@ -7,13 +7,53 @@ Operations
 class Add(Function):
     @staticmethod
     def forward(ctx, a, b):
+        a = _ensure_tensor(a)
+        b= _ensure_tensor(b)
         ctx.save_for_backwards(a,b)
         return Tensor(a.data + b.data, requires_grad=a.requires_grad or b.requires_grad)
 
     @staticmethod
     def backward(ctx, grad_output):
         a, b = ctx.saved_tensors
-        return grad_output, grad_output
+        # Start with the incoming gradient data
+        grad_a_data = grad_output.data
+        grad_b_data = grad_output.data
+
+        # Handle broadcasting for input 'a' if its shape differs
+        if a.shape != grad_output.shape:
+            # Identify axes present in grad_output but not (or size 1) in 'a'
+            axes_to_sum_a = tuple(i for i, dim_out in enumerate(grad_output.shape)
+                                if i >= len(a.shape) or a.shape[i] == 1 and dim_out > 1)
+            if axes_to_sum_a:
+                 # Sum along the broadcasted axes
+                 summed_grad_a = np.sum(grad_a_data, axis=axes_to_sum_a, keepdims=True)
+                 # Reshape the summed gradient to match the original shape of 'a'
+                 grad_a_data = np.reshape(summed_grad_a, a.shape)
+            # Handle case where 'a' was scalar expanded
+            elif not a.shape and grad_output.shape:
+                 grad_a_data = np.array(np.sum(grad_a_data)) # Sum all, ensure scalar shape
+
+
+        # Handle broadcasting for input 'b' if its shape differs
+        if b.shape != grad_output.shape:
+             # Identify axes present in grad_output but not (or size 1) in 'b'
+             axes_to_sum_b = tuple(i for i, dim_out in enumerate(grad_output.shape)
+                                 if i >= len(b.shape) or b.shape[i] == 1 and dim_out > 1)
+             if axes_to_sum_b:
+                  # Sum along the broadcasted axes
+                  summed_grad_b = np.sum(grad_b_data, axis=axes_to_sum_b, keepdims=True)
+                  # Reshape the summed gradient to match the original shape of 'b'
+                  grad_b_data = np.reshape(summed_grad_b, b.shape)
+             # Handle case where 'b' was scalar expanded
+             elif not b.shape and grad_output.shape:
+                  grad_b_data = np.array(np.sum(grad_b_data)) # Sum all, ensure scalar shape
+
+
+        # Return Tensor or None based on requires_grad
+        grad_a = Tensor(grad_a_data) if a.requires_grad else None
+        grad_b = Tensor(grad_b_data) if b.requires_grad else None
+
+        return grad_a, grad_b
 
 class Sub(Function):
     @staticmethod
