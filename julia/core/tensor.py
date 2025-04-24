@@ -29,18 +29,36 @@ class Function:
     @classmethod
     def apply(cls, *args, **kwargs):
         ctx = Context()
-        result = cls.forward(ctx, *args, **kwargs)
-        requires_grad = any(
+        # Forward pass produces the result tensor(s)
+        result = cls.forward(ctx, *args, **kwargs) # Assume forward returns Tensor or tuple of Tensors
+
+        # Determine if any input requires grad
+        op_requires_grad = any(
             isinstance(arg, Tensor) and arg.requires_grad for arg in args
         )
-        if requires_grad:
+
+        if op_requires_grad:
+            # Create the backward node using the original inputs
             backward_node = BackwardNode(cls, ctx, args)
+
+            # Assign the node AND set requires_grad flag on the output tensor(s)
             if isinstance(result, Tensor):
                 result._backward_node = backward_node
+                result.requires_grad = True # <--- Explicitly set the flag
             elif isinstance(result, tuple):
+                # Ensure all tensor outputs are marked
+                processed_result = []
                 for r in result:
                     if isinstance(r, Tensor):
                         r._backward_node = backward_node
+                        r.requires_grad = True # <--- Explicitly set the flag
+                        processed_result.append(r)
+                    else:
+                        processed_result.append(r) # Keep non-tensors as is
+                result = tuple(processed_result)
+            # Handle other potential return types if needed
+
+        # If op_requires_grad is False, result tensors keep their original flag
         return result
 
 
@@ -49,12 +67,22 @@ class BackwardNode:
         self.fn_cls = fn_cls
         self.ctx = ctx
         self.inputs = inputs
-        self.next_functions = []
+        self.next_functions = [] 
         for inp in inputs:
-            if isinstance(inp, Tensor) and inp.requires_grad:
-                if inp._backward_node is not None:
+            if hasattr(inp, 'requires_grad') and inp.requires_grad:
+                if hasattr(inp, '_backward_node') and inp._backward_node is not None:
                     self.next_functions.append(inp._backward_node)
 
+class Context:
+    def __init__(self):
+        self.saved_tensors = ()
+        self.saved_data = {}
+
+    def save_for_backwards(self, *tensors):
+        self.saved_tensors = tensors
+
+    def save_data(self, **kwargs):
+        self.saved_data.update(kwargs)
 
 class Tensor:
     def __init__(self, data, requires_grad=False, device=None, dtype=None):
@@ -148,9 +176,12 @@ class Tensor:
             shape = shape[0]
         return Reshape.apply(self, shape)
 
+    def transpose(self):
+        from julia.core.ops import Transpose
+        return Transpose.apply(self)
+
+
 def _ensure_tensor(data):
     if isinstance(data, Tensor):
         return data
     return Tensor(data)
-
-

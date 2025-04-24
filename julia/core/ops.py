@@ -1,8 +1,30 @@
 import numpy as np
-from julia.core.tensor import Function, Tensor, _ensure_tensor
+from julia.core.tensor import Function, Tensor, _ensure_tensor, Context
 """
 Operations
 """
+
+class Transpose(Function):
+    @staticmethod
+    def forward(ctx: Context, tensor: Tensor) -> Tensor:
+        if tensor.data.ndim < 2:
+            # Handle 0D or 1D tensors if necessary, maybe return unchanged?
+            # Or raise error depending on desired behavior.
+            # For typical matmul, we expect at least 2D.
+             return tensor # Or raise error
+        ctx.save_data(shape=tensor.shape) # Save original shape if needed for backward
+        # No need to save tensor itself if backward only needs grad_output
+        result_data = tensor.data.T.copy() # Ensure it's a copy
+        return Tensor(result_data) # Let Function.apply handle requires_grad and _backward_node
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor) -> Tensor:
+        # The gradient of transpose is just the transpose of the gradient
+        if grad_output.data.ndim < 2:
+             return grad_output 
+        # No need to use ctx if only grad_output is needed
+        result_grad_data = grad_output.data.T.copy()
+        return Tensor(result_grad_data)
 
 class Add(Function):
     @staticmethod
@@ -21,33 +43,45 @@ class Add(Function):
 
         # Handle broadcasting for input 'a' if its shape differs
         if a.shape != grad_output.shape:
-            # Identify axes present in grad_output but not (or size 1) in 'a'
-            axes_to_sum_a = tuple(i for i, dim_out in enumerate(grad_output.shape)
-                                if i >= len(a.shape) or a.shape[i] == 1 and dim_out > 1)
-            if axes_to_sum_a:
-                 # Sum along the broadcasted axes
-                 summed_grad_a = np.sum(grad_a_data, axis=axes_to_sum_a, keepdims=True)
-                 # Reshape the summed gradient to match the original shape of 'a'
-                 grad_a_data = np.reshape(summed_grad_a, a.shape)
-            # Handle case where 'a' was scalar expanded
-            elif not a.shape and grad_output.shape:
-                 grad_a_data = np.array(np.sum(grad_a_data)) # Sum all, ensure scalar shape
-
+            # Handle broadcasting across dimensions
+            if len(a.shape) < len(grad_output.shape):
+                # Need to sum over the extra dimensions
+                extra_dims = len(grad_output.shape) - len(a.shape)
+                sum_dims = tuple(range(extra_dims))
+                grad_a_data = np.sum(grad_a_data, axis=sum_dims, keepdims=True)
+                
+                # Now remove the extra singleton dimensions
+                grad_a_data = grad_a_data.reshape(a.shape)
+            else:
+                # Same number of dimensions but some are 1
+                sum_dims = tuple(i for i, dim in enumerate(a.shape) 
+                                if dim == 1 and grad_output.shape[i] > 1)
+                if sum_dims:
+                    grad_a_data = np.sum(grad_a_data, axis=sum_dims, keepdims=True)
+                    
+                    # Reshape to match original shape
+                    grad_a_data = np.reshape(grad_a_data, a.shape)
 
         # Handle broadcasting for input 'b' if its shape differs
         if b.shape != grad_output.shape:
-             # Identify axes present in grad_output but not (or size 1) in 'b'
-             axes_to_sum_b = tuple(i for i, dim_out in enumerate(grad_output.shape)
-                                 if i >= len(b.shape) or b.shape[i] == 1 and dim_out > 1)
-             if axes_to_sum_b:
-                  # Sum along the broadcasted axes
-                  summed_grad_b = np.sum(grad_b_data, axis=axes_to_sum_b, keepdims=True)
-                  # Reshape the summed gradient to match the original shape of 'b'
-                  grad_b_data = np.reshape(summed_grad_b, b.shape)
-             # Handle case where 'b' was scalar expanded
-             elif not b.shape and grad_output.shape:
-                  grad_b_data = np.array(np.sum(grad_b_data)) # Sum all, ensure scalar shape
-
+            # Handle broadcasting across dimensions
+            if len(b.shape) < len(grad_output.shape):
+                # Need to sum over the extra dimensions
+                extra_dims = len(grad_output.shape) - len(b.shape)
+                sum_dims = tuple(range(extra_dims))
+                grad_b_data = np.sum(grad_b_data, axis=sum_dims, keepdims=True)
+                
+                # Now remove the extra singleton dimensions
+                grad_b_data = grad_b_data.reshape(b.shape)
+            else:
+                # Same number of dimensions but some are 1
+                sum_dims = tuple(i for i, dim in enumerate(b.shape) 
+                                if dim == 1 and grad_output.shape[i] > 1)
+                if sum_dims:
+                    grad_b_data = np.sum(grad_b_data, axis=sum_dims, keepdims=True)
+                    
+                    # Reshape to match original shape
+                    grad_b_data = np.reshape(grad_b_data, b.shape)
 
         # Return Tensor or None based on requires_grad
         grad_a = Tensor(grad_a_data) if a.requires_grad else None
@@ -100,11 +134,97 @@ class MatMul(Function):
         return Tensor(np.matmul(a.data, b.data), requires_grad=a.requires_grad or b.requires_grad)
 
     @staticmethod
+    def backward(ctx, grad_output: Tensor) -> tuple[Tensor | None, Tensor | None]:
+        a, b = ctx.saved_tensors
+        grad_output_data = grad_output.data
+
+        # grad_a = grad_output @ b.T
+        # Use swapaxes for transpose that works on batches
+        b_T_data = np.swapaxes(b.data, -1, -2)
+        grad_a_data = np.matmul(grad_output_data, b_T_data)
+
+        # grad_b = a.T @ grad_output
+        # Use swapaxes for transpose that works on batches
+        a_T_data = np.swapaxes(a.data, -1, -2)
+        grad_b_data = np.matmul(a_T_data, grad_output_data)
+
+        # --- Broadcasting Adjustment (Crucial!) ---
+        # If broadcasting occurred in the forward pass (e.g., batch dim added),
+        # the gradients might have extra dimensions that need summing out.
+        # Example: If a=(M,N) and b=(N,P) -> output=(M,P), grad_output=(M,P)
+        #          grad_a=(M,N), grad_b=(N,P) -> Shapes match, no sum needed.
+        # Example: If a=(B,M,N) and b=(N,P) -> output=(B,M,P), grad_output=(B,M,P)
+        #          grad_a = (B,M,P) @ (P,N) -> (B,M,N) -> Matches a, no sum needed.
+        #          grad_b = (B,N,M) @ (B,M,P) -> (B,N,P) -> Needs sum over B dim for b!
+        # We need to sum grad_a/grad_b if their ndim > original a/b ndim
+
+        def sum_leading_dims_if_needed(grad_data, original_tensor):
+             if grad_data.ndim > original_tensor.data.ndim:
+                 dims_to_sum = tuple(range(grad_data.ndim - original_tensor.data.ndim))
+                 return np.sum(grad_data, axis=dims_to_sum, keepdims=False)
+             # Handle cases where a dimension was broadcasted (e.g., size 1)
+             # This is more complex, but start with summing leading dims.
+             # A more robust solution might check original_tensor.shape vs grad_data.shape
+             # element-wise and sum where original dim was 1 but grad dim > 1.
+             # For now, let's assume the main issue is the extra batch dims.
+             return grad_data
+
+        grad_a_data = sum_leading_dims_if_needed(grad_a_data, a)
+        grad_b_data = sum_leading_dims_if_needed(grad_b_data, b)
+
+        # --- Final Shape Check (Optional Sanity Check) ---
+        # It's good practice but shouldn't be strictly necessary if logic is right
+        if grad_a_data.shape != a.shape:
+             # This might still happen if a dimension was size 1 and got broadcast
+             # Add more sophisticated summing/reshaping if needed, but the
+             # core matmuls above should be the primary calculation.
+             # Example: if a.shape[i] == 1 and grad_a_data.shape[i] > 1: sum axis i
+             print(f"Warning: MatMul grad_a shape mismatch {grad_a_data.shape} vs {a.shape}")
+             # Attempt a reshape if product matches, otherwise error likely
+             if np.prod(grad_a_data.shape) == np.prod(a.shape):
+                 grad_a_data = grad_a_data.reshape(a.shape)
+
+
+        if grad_b_data.shape != b.shape:
+             print(f"Warning: MatMul grad_b shape mismatch {grad_b_data.shape} vs {b.shape}")
+             if np.prod(grad_b_data.shape) == np.prod(b.shape):
+                 grad_b_data = grad_b_data.reshape(b.shape)
+
+
+        grad_a = Tensor(grad_a_data) if a.requires_grad else None
+        grad_b = Tensor(grad_b_data) if b.requires_grad else None
+
+        return grad_a, grad_b
+
+class MatMulTranspose(Function):
+    @staticmethod
+    def forward(ctx, a, b):
+        ctx.save_for_backwards(a, b)
+        # Transpose b for matrix multiplication
+        b_t = b.data.T
+        return Tensor(np.matmul(a.data, b_t), requires_grad=a.requires_grad or b.requires_grad)
+
+    @staticmethod
     def backward(ctx, grad_output):
         a, b = ctx.saved_tensors
-        grad_a = np.matmul(grad_output.data, b.data.T)
-        grad_b = np.matmul(a.data.T, grad_output.data)
-        return Tensor(grad_a), Tensor(grad_b)
+        
+        # For y = a @ b.T:
+        # grad_a = grad_output @ b  (without transpose)
+        # grad_b = a.T @ grad_output  (with tranpose)
+        
+        # Handle gradient for a
+        grad_a = None
+        if a.requires_grad:
+            grad_a_data = np.matmul(grad_output.data, b.data)
+            grad_a = Tensor(grad_a_data)
+        
+        # Handle gradient for b
+        grad_b = None
+        if b.requires_grad:
+            grad_b_data = np.matmul(a.data.T, grad_output.data)
+            grad_b = Tensor(grad_b_data)
+        
+        return grad_a, grad_b
 
 class Reshape(Function):
     @staticmethod
