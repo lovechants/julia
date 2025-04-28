@@ -48,9 +48,6 @@ class TestCNN(unittest.TestCase):
         # After Flatten: batch_size x (32*8*8) = batch_size x 2048
         # After Linear(2048, 128): batch_size x 128
         # After Linear(128, 10): batch_size x 10
-        
-        # For a more detailed test, you could extract and check intermediate shapes
-        # by adding hooks or by calling each layer individually
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,6 @@
 import numpy as np
 from julia.core.tensor import Function, Tensor, _ensure_tensor, Context
+from typing import Tuple, List
 """
 Operations
 """
@@ -25,6 +26,27 @@ class Transpose(Function):
         # No need to use ctx if only grad_output is needed
         result_grad_data = grad_output.data.T.copy()
         return Tensor(result_grad_data)
+
+class Dropout(Function):
+    @staticmethod
+    def forward(ctx, tensor: Tensor, p: float, training: bool) -> Tensor:
+        mask = None; keep_prob = 1.0 - p
+        output_data = tensor.data
+        if training and p > 0:
+            mask = (np.random.rand(*tensor.shape) < keep_prob).astype(tensor.data.dtype)
+            output_data = (tensor.data * mask) / keep_prob
+        ctx.save_data(mask=mask, p=p, training=training, keep_prob=keep_prob)
+        return Tensor(output_data)
+    @staticmethod
+    def backward(ctx, grad_output: Tensor) -> Tuple[Tensor | None, None, None]:
+        mask = ctx.saved_data['mask']
+        p = ctx.saved_data['p']
+        training = ctx.saved_data['training']
+        keep_prob = ctx.saved_data['keep_prob']
+        grad_input_data = grad_output.data
+        if training and p > 0:
+            grad_input_data = (grad_output.data * mask) / keep_prob
+        return Tensor(grad_input_data), None, None
 
 class Add(Function):
     @staticmethod
@@ -148,7 +170,6 @@ class MatMul(Function):
         a_T_data = np.swapaxes(a.data, -1, -2)
         grad_b_data = np.matmul(a_T_data, grad_output_data)
 
-        # --- Broadcasting Adjustment (Crucial!) ---
         # If broadcasting occurred in the forward pass (e.g., batch dim added),
         # the gradients might have extra dimensions that need summing out.
         # Example: If a=(M,N) and b=(N,P) -> output=(M,P), grad_output=(M,P)
@@ -193,7 +214,6 @@ class MatMul(Function):
 
         grad_a = Tensor(grad_a_data) if a.requires_grad else None
         grad_b = Tensor(grad_b_data) if b.requires_grad else None
-
         return grad_a, grad_b
 
 class MatMulTranspose(Function):
@@ -238,6 +258,60 @@ class Reshape(Function):
         original_shape = ctx.saved_data['original_shape']
         return Tensor(grad_output.data.reshape(original_shape)), None
 
+class Slice(Function):
+    @staticmethod
+    def forward(ctx, tensor: Tensor, slice_obj) -> Tensor:
+        ctx.save_data(original_shape=tensor.shape, slice_obj=slice_obj)
+        result_data = tensor.data[slice_obj]
+        return Tensor(result_data)
+    @staticmethod
+    def backward(ctx, grad_output: Tensor) -> Tuple[Tensor | None, None]:
+        original_shape = ctx.saved_data['original_shape']
+        slice_obj = ctx.saved_data['slice_obj']
+        grad_input_data = np.zeros(original_shape, dtype=grad_output.data.dtype)
+        grad_input_data[slice_obj] = grad_output.data
+        return Tensor(grad_input_data), None
+
+class Stack(Function):
+    @staticmethod
+    def forward(ctx, tensors: List[Tensor], axis: int) -> Tensor:
+        tensor_list = [_ensure_tensor(t) for t in tensors]
+        if not tensor_list: raise ValueError("Cannot stack empty list")
+        ctx.save_data(axis=axis, num_tensors=len(tensor_list))
+        data_list = [t.data for t in tensor_list]
+        result_data = np.stack(data_list, axis=axis)
+        return Tensor(result_data)
+    @staticmethod
+    def backward(ctx, grad_output: Tensor) -> Tuple[List[Tensor | None], None]:
+        axis = ctx.saved_data['axis']
+        num_tensors = ctx.saved_data['num_tensors']
+        grad_inputs_data = []
+        slices = [slice(None)] * grad_output.data.ndim
+        for i in range(num_tensors):
+            slices[axis] = i
+            grad_inputs_data.append(grad_output.data[tuple(slices)])
+        grad_inputs = [Tensor(grad_data) for grad_data in grad_inputs_data]
+        return tuple(grad_inputs) + (None,)
+
+class Concatenate(Function):
+    @staticmethod
+    def forward(ctx, tensors: List[Tensor], axis: int) -> Tensor:
+        tensor_list = [_ensure_tensor(t) for t in tensors]
+        if not tensor_list: raise ValueError("Cannot concatenate empty list")
+        shapes = [t.shape[axis] for t in tensor_list]
+        ctx.save_data(axis=axis, shapes=shapes)
+        data_list = [t.data for t in tensor_list]
+        result_data = np.concatenate(data_list, axis=axis)
+        return Tensor(result_data)
+    @staticmethod
+    def backward(ctx, grad_output: Tensor) -> Tuple[List[Tensor | None], None]:
+        axis = ctx.saved_data['axis']
+        shapes = ctx.saved_data['shapes']
+        split_indices = np.cumsum(shapes)[:-1]
+        grad_inputs_data = np.split(grad_output.data, split_indices, axis=axis)
+        grad_inputs = [Tensor(grad_data) for grad_data in grad_inputs_data]
+        return tuple(grad_inputs) + (None,)
+
 class ReLU(Function):
     @staticmethod
     def forward(ctx, a):
@@ -248,7 +322,7 @@ class ReLU(Function):
     def backward(ctx, grad_output):
         a, = ctx.saved_tensors
         grad = grad_output.data * (a.data > 0)
-        return Tensor(grad)
+        return (Tensor(grad),)
 
 
 class LeakyReLU(Function):
@@ -270,7 +344,7 @@ class LeakyReLU(Function):
         alpha = ctx.saved_data['alpha']
         grad = grad_output.data.copy()
         grad[a.data <= 0] *= alpha
-        return Tensor(grad)
+        return (Tensor(grad), None)
 
 
 class PReLU(Function):
@@ -319,7 +393,7 @@ class ELU(Function):
         grad = grad_output.data.copy()
         mask = a.data <= 0
         grad[mask] *= alpha * np.exp(a.data[mask])
-        return Tensor(grad)
+        return (Tensor(grad), None)
 
 
 class SELU(Function):
@@ -373,7 +447,7 @@ class Sigmoid(Function):
     def backward(ctx, grad_output):
         sig = ctx.saved_data['sig']
         grad = grad_output.data * sig * (1 - sig)
-        return Tensor(grad)
+        return (Tensor(grad),)
 
 
 class Tanh(Function):
@@ -391,7 +465,7 @@ class Tanh(Function):
     def backward(ctx, grad_output):
         tanh_val = ctx.saved_data['tanh_val']
         grad = grad_output.data * (1 - tanh_val ** 2)
-        return Tensor(grad)
+        return (Tensor(grad),)
 
 
 class Softmax(Function):
@@ -522,7 +596,7 @@ class Swish(Function):
         
         x = a.data
         grad = grad_output.data * (beta * swish + sigmoid_x * (1 - beta * x * sigmoid_x))
-        return Tensor(grad)
+        return (Tensor(grad), None)
 
 def extend_tensor_with_activations():
     """Add activation methods to the Tensor class"""

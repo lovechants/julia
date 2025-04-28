@@ -29,11 +29,9 @@ class Conv1D(Layer):
         scale = np.sqrt(2.0 / (in_channels * kernel_size))
         weight_shape = (out_channels, in_channels, kernel_size)
         self.weight = Tensor(np.random.randn(*weight_shape) * scale, requires_grad=True)
-        self.parameters.append(self.weight)
 
         if bias: 
             self.bias = Tensor(np.zeros(out_channels), requires_grad=True)
-            self.parameters.append(self.bias)
 
         else:
             self.bias = None 
@@ -123,11 +121,9 @@ class Conv2D(Layer):
         scale = np.sqrt(2.0 / (in_channels * self.kernel_size[0] * self.kernel_size[1]))
         weight_shape = (out_channels, in_channels, self.kernel_size[0], self.kernel_size[1])
         self.weight = Tensor(np.random.randn(*weight_shape) * scale, requires_grad=True)
-        self.parameters.append(self.weight)
         
         if bias:
             self.bias = Tensor(np.zeros(out_channels), requires_grad=True)
-            self.parameters.append(self.bias)
         else:
             self.bias = None
     
@@ -231,11 +227,9 @@ class Conv3D(Layer):
         scale = np.sqrt(2.0 / (in_channels * np.prod(self.kernel_size)))
         weight_shape = (out_channels, in_channels) + self.kernel_size
         self.weight = Tensor(np.random.randn(*weight_shape) * scale, requires_grad=True)
-        self.parameters.append(self.weight)
         
         if bias:
             self.bias = Tensor(np.zeros(out_channels), requires_grad=True)
-            self.parameters.append(self.bias)
         else:
             self.bias = None
     
@@ -344,11 +338,9 @@ class TransposedConv2D(Layer):
         scale = np.sqrt(2.0 / (in_channels * np.prod(self.kernel_size)))
         weight_shape = (in_channels, out_channels) + self.kernel_size
         self.weight = Tensor(np.random.randn(*weight_shape) * scale, requires_grad=True)
-        self.parameters.append(self.weight)
         
         if bias:
             self.bias = Tensor(np.zeros(out_channels), requires_grad=True)
-            self.parameters.append(self.bias)
         else:
             self.bias = None
     
@@ -449,17 +441,14 @@ class DepthwiseSeparableConv2D(Layer):
         depthwise_shape = (self.depth_channels, 1) + self.kernel_size
         scale_depthwise = np.sqrt(2.0 / (np.prod(self.kernel_size)))
         self.depthwise_weight = Tensor(np.random.randn(*depthwise_shape) * scale_depthwise, requires_grad=True)
-        self.parameters.append(self.depthwise_weight)
         
         # Pointwise convolution weights - 1x1 convolution to mix channels
         pointwise_shape = (out_channels, self.depth_channels, 1, 1)
         scale_pointwise = np.sqrt(2.0 / self.depth_channels)
         self.pointwise_weight = Tensor(np.random.randn(*pointwise_shape) * scale_pointwise, requires_grad=True)
-        self.parameters.append(self.pointwise_weight)
         
         if bias:
             self.bias = Tensor(np.zeros(out_channels), requires_grad=True)
-            self.parameters.append(self.bias)
         else:
             self.bias = None
             
@@ -582,11 +571,9 @@ class DilatedConv2D(Layer):
         scale = np.sqrt(2.0 / (in_channels * np.prod(self.kernel_size)))
         weight_shape = (out_channels, in_channels) + self.kernel_size
         self.weight = Tensor(np.random.randn(*weight_shape) * scale, requires_grad=True)
-        self.parameters.append(self.weight)
         
         if bias:
             self.bias = Tensor(np.zeros(out_channels), requires_grad=True)
-            self.parameters.append(self.bias)
         else:
             self.bias = None
             

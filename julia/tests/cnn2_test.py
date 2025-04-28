@@ -35,23 +35,32 @@ class CNNTestModel(Sequential):
             fc2
         )
 
-# Custom layer for tracking intermediate outputs
 class FeatureExtractor(Layer):
     def __init__(self, model, layer_indices):
         super().__init__()
+        # Ensure model is a Sequential instance or similar that has _layers_list
+        if not isinstance(model, Sequential) or not hasattr(model, '_layers_list'):
+             raise TypeError("FeatureExtractor expects a Sequential model with a '_layers_list' attribute")
         self.model = model
         self.layer_indices = layer_indices
         self.features = {}
-        
+
     def forward(self, x):
         features = {}
         activation = x
-        
-        for i, layer in enumerate(self.model.layers):
-            activation = layer(activation)
+
+        # Access the internal list from Sequential that holds layers/functions in order
+        if not hasattr(self.model, '_layers_list'):
+             # This check is redundant if the __init__ check passes, but safe
+             raise AttributeError("Model passed to FeatureExtractor does not have '_layers_list'")
+
+        # Iterate over the correct attribute: _layers_list
+        for i, layer_or_fn in enumerate(self.model._layers_list):
+            activation = layer_or_fn(activation) # Call layer or function
             if i in self.layer_indices:
+                # Store feature using the sequential index 'i'
                 features[i] = activation
-        
+
         self.features = features
         return activation
 
@@ -134,7 +143,7 @@ class TestCNNModel(unittest.TestCase):
         cnn = CNNTestModel(in_channels=3, num_classes=10)
         
         # Count parameters
-        param_count = sum(np.prod(param.shape) for param in cnn.parameters)
+        param_count = sum(np.prod(param.shape) for param in cnn.parameters())
         
         # Expected parameter count:
         # Conv1: (16 * 3 * 3 * 3) + 16 = 448
@@ -157,7 +166,7 @@ class TestCNNModel(unittest.TestCase):
         )
         
         # Access and modify parameters directly
-        for param in model.parameters:
+        for param in model.parameters():
             # Store original value
             orig_data = param.data.copy()
             

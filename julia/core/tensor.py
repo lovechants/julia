@@ -69,76 +69,123 @@ class BackwardNode:
         self.inputs = inputs
         self.next_functions = [] 
         for inp in inputs:
-            if hasattr(inp, 'requires_grad') and inp.requires_grad:
-                if hasattr(inp, '_backward_node') and inp._backward_node is not None:
-                    self.next_functions.append(inp._backward_node)
-
-class Context:
-    def __init__(self):
-        self.saved_tensors = ()
-        self.saved_data = {}
-
-    def save_for_backwards(self, *tensors):
-        self.saved_tensors = tensors
-
-    def save_data(self, **kwargs):
-        self.saved_data.update(kwargs)
+            if isinstance(inp, Tensor) and inp.requires_grad and inp._backward_node:
+                self.next_functions.append(inp._backward_node)
 
 class Tensor:
     def __init__(self, data, requires_grad=False, device=None, dtype=None):
         self.id = str(uuid.uuid4())
         if isinstance(data, Tensor):
             self.data = data.data
+            self.requires_grad = requires_grad
+            self.grad = None 
+            self._backward_node = None
         elif isinstance(data, np.ndarray):
             self.data = data
+            self.requires_grad = requires_grad
+            self.grad = None 
+            self._backward_node = None 
         else:
             self.data = np.array(data, dtype=dtype)
-        self.requires_grad = requires_grad
-        self.grad = None
-        self._backward_node = None
+            self.requires_grad = requires_grad
+            self.grad = None
+            self._backward_node = None
+
         self.device = device or "cpu"
         self.shape = self.data.shape
 
     def zero_grad(self):
         self.grad = None
 
+    def dropout(self, p: float, training: bool):
+        from julia.core.ops import Dropout
+        return Dropout.apply(self, p, training)
+
     def backward(self, gradient=None):
+        if not self.requires_grad:
+            return # Silently return if no grad required
+
+        # --- Graph Traversal ---
+        visited_nodes = set()
+        topo_order_nodes = []
+        def build_topo(node):
+            if node and node not in visited_nodes:
+                visited_nodes.add(node)
+                for inp in node.inputs:
+                     if isinstance(inp, Tensor) and inp._backward_node:
+                         build_topo(inp._backward_node)
+                topo_order_nodes.append(node)
+
+        if self._backward_node:
+             build_topo(self._backward_node)
+
+        # --- Gradient Initialization ---
         if gradient is None:
             if self.shape == () or self.shape == (1,):
-                gradient = np.ones_like(self.data)
+                gradient_data = np.ones_like(self.data)
             else:
-                raise ValueError("Must specify gradient for non-scalar tensors")
-        if isinstance(gradient, Tensor):
-            gradient = gradient.data
-        self.grad = Tensor(gradient)
+                raise ValueError("Must specify gradient for non-scalar tensors used as root of backward()")
+        elif isinstance(gradient, Tensor):
+            gradient_data = gradient.data.copy() # Use copy
+        else:
+            gradient_data = np.array(gradient).copy() # Convert scalar/list/etc. and copy
 
-        visited = set()
-        topo_order = []
+        # --- Gradient Accumulation Dictionary (Tensor object -> Accumulated Grad Data) ---
+        # Initialize ONCE before the loop
+        grads_tensor_keyed = {self: gradient_data}
 
-        def build_topo(node):
-            if node and node not in visited:
-                visited.add(node)
-                for next_node in getattr(node, 'next_functions', []):
-                    build_topo(next_node)
-                topo_order.append(node)
+        # Assign initial gradient to self.grad attribute
+        if self.grad is None:
+            self.grad = Tensor(gradient_data.copy()) # Use copy
+        else:
+            self.grad.data += gradient_data # Accumulate if backward called multiple times
 
-        build_topo(self._backward_node)
+        # --- Backpropagation Loop (SINGLE loop) ---
+        for node in reversed(topo_order_nodes):
+             # Find the output tensor 't' where t._backward_node == node
+             output_tensor = None
+             output_grad_data = None
+             for t, grad_d in grads_tensor_keyed.items():
+                 # Check if the tensor 't' has a backward node and if it's the current node
+                 if hasattr(t, '_backward_node') and t._backward_node is node:
+                     output_tensor = t
+                     output_grad_data = grad_d
+                     break # Assume one primary output for simplicity
 
-        grads = {self._backward_node: self.grad}
+             if output_tensor is None or output_grad_data is None:
+                 # This node's output gradient wasn't computed or needed? Skip.
+                 # This can happen if a branch of the graph doesn't lead to the final output
+                 # print(f"Skipping node {node.fn_cls.__name__} - output gradient not found in grads dict.")
+                 continue
 
-        for node in reversed(topo_order):
-            grad_out = grads[node]
-            grads_in = node.fn_cls.backward(node.ctx, grad_out)
-            if not isinstance(grads_in, tuple):
-                grads_in = (grads_in,)
-            for inp, grad_in in zip(node.inputs, grads_in):
-                if isinstance(inp, Tensor) and inp.requires_grad:
-                    if inp.grad is None:
-                        inp.grad = grad_in
-                    else:
-                        inp.grad.data += grad_in.data
-                    if inp._backward_node:
-                        grads[inp._backward_node] = grad_in
+             # Compute gradients for the inputs of this operation
+             # Pass a Tensor wrapper for the output gradient to backward function
+             grad_out_tensor = Tensor(output_grad_data)
+             grads_in = node.fn_cls.backward(node.ctx, grad_out_tensor)
+
+             if not isinstance(grads_in, tuple):
+                 grads_in = (grads_in,)
+
+             # Distribute gradients to the input tensors
+             if len(node.inputs) != len(grads_in):
+                 raise RuntimeError(f"Backward function {node.fn_cls.__name__} returned {len(grads_in)} gradients, but forward took {len(node.inputs)} inputs.")
+
+             for inp, grad_in_tensor in zip(node.inputs, grads_in):
+                 # Check if input is a Tensor that requires grad and received a gradient
+                 if isinstance(inp, Tensor) and inp.requires_grad:
+                     if grad_in_tensor is not None:
+                         grad_in_data = grad_in_tensor.data
+                         # Accumulate in grads dictionary (for further propagation)
+                         if inp not in grads_tensor_keyed:
+                             grads_tensor_keyed[inp] = grad_in_data.copy() # Use copy
+                         else:
+                             grads_tensor_keyed[inp] += grad_in_data
+                         # Accumulate in .grad attribute (for user access)
+                         if inp.grad is None:
+                             inp.grad = Tensor(grad_in_data.copy()) # Use copy
+                         else:
+                             inp.grad.data += grad_in_data
+
 
         # Operator overloads 
 

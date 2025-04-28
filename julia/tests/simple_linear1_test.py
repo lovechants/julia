@@ -30,7 +30,6 @@ class TestLinearLayer(unittest.TestCase):
         self.assertTrue(np.allclose(y.data, expected_output))
         
         # Create a very simple loss (sum of all outputs)
-        # This avoids complex loss functions that might have their own issues
         loss = y.data.sum()
         
         # Initialize gradient as ones - this is simpler than using a loss function
