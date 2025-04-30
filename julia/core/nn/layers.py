@@ -19,49 +19,20 @@ class Layer:
     def eval(self):
         return self.train(False)
     
-    '''
     def parameters(self, recurse: bool = True) -> List[Tensor]:
-        # Use a set to prevent infinite loops in case of weird circular references
-        # (though __setattr__ should prevent direct self-containment)
-        params_set = set()
-        modules_visited = set()
-
-        def collect_params(module, current_params_set, current_modules_visited):
-            if module in current_modules_visited:
-                return # Avoid infinite recursion
-            current_modules_visited.add(module)
-
-            for param in module._parameters.values():
-                 if param is not None: # Check param is not None
-                     current_params_set.add(param)
-
-            if recurse:
-                for submodule in module._modules.values():
-                     if submodule is not None: # Check submodule is not None
-                         collect_params(submodule, current_params_set, current_modules_visited)
-
-        collect_params(self, params_set, modules_visited)
-        return list(params_set)
-    '''
-    def parameters(self, recurse: bool = True) -> List[Tensor]:
-        print(f"\n--- Calling parameters() on {type(self).__name__} (id: {id(self)}) ---")
         params_set = set()
         modules_visited = set()
 
         def collect_params(module, current_params_set, current_modules_visited):
             module_id = id(module)
-            print(f"  -> collect_params on {type(module).__name__} (id: {module_id})")
             if module in current_modules_visited:
-                print(f"     Skipping visited module: {type(module).__name__}")
                 return
             current_modules_visited.add(module)
 
             # Check direct parameters
-            print(f"     Module._parameters keys: {list(getattr(module, '_parameters', {}).keys())}")
             direct_params = getattr(module, '_parameters', {}).values()
             for param in direct_params:
                  if param is not None:
-                     print(f"     Adding direct param: {type(param)} shape {param.shape} (id: {id(param)})")
                      current_params_set.add(param)
                  else:
                      print("     Found None in _parameters values")
@@ -72,43 +43,17 @@ class Layer:
                 submodules = getattr(module, '_modules', {}).values()
                 for submodule_name, submodule in getattr(module, '_modules', {}).items():
                      if submodule is not None:
-                         print(f"     Recursing into submodule '{submodule_name}': {type(submodule).__name__}")
                          collect_params(submodule, current_params_set, current_modules_visited)
                      else:
                          print(f"     Found None submodule for key '{submodule_name}'")
 
         collect_params(self, params_set, modules_visited)
-        print(f"--- Finished parameters() on {type(self).__name__}. Found {len(params_set)} params. ---")
         return list(params_set)
 
     def zero_grad(self):
         for p in self.parameters():
             p.zero_grad()
     
-    '''
-    def __setattr__(self, name: str, value: Any):
-        if '_parameters' not in self.__dict__ or \
-           '_modules' not in self.__dict__ or \
-           '_buffers' not in self.__dict__:
-             super().__setattr__(name, value)
-             return
-        # Remove existing attribute from internal dicts first if replacing
-        params = self.__dict__.get('_parameters')
-        modules = self.__dict__.get('_modules')
-        buffers = self.__dict__.get('_buffers')
-
-        if params is not None and name in params: del params[name]
-        if modules is not None and name in modules: del modules[name]
-        if buffers is not None and name in buffers: del buffers[name]
-
-        if isinstance(value, Tensor) and value.requires_grad:
-            params[name] = value
-        elif isinstance(value, Layer):
-            modules[name] = value
-
-        # Set the attribute using the default mechanism AFTER handling internal dicts
-        super().__setattr__(name, value)
-    '''
     def __setattr__(self, name: str, value: Any):
         if '_parameters' not in self.__dict__ or \
            '_modules' not in self.__dict__ or \

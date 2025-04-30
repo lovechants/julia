@@ -227,6 +227,10 @@ class Tensor:
         from julia.core.ops import Transpose
         return Transpose.apply(self)
 
+    def sum(self):
+        from julia.core.ops import Sum
+        return Sum.apply(self)
+
 
 def _ensure_tensor(data):
     if isinstance(data, Tensor):

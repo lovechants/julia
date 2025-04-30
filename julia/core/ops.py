@@ -37,6 +37,7 @@ class Dropout(Function):
             output_data = (tensor.data * mask) / keep_prob
         ctx.save_data(mask=mask, p=p, training=training, keep_prob=keep_prob)
         return Tensor(output_data)
+    
     @staticmethod
     def backward(ctx, grad_output: Tensor) -> Tuple[Tensor | None, None, None]:
         mask = ctx.saved_data['mask']
@@ -110,6 +111,23 @@ class Add(Function):
         grad_b = Tensor(grad_b_data) if b.requires_grad else None
 
         return grad_a, grad_b
+
+class Sum(Function):
+    @staticmethod
+    def forward(ctx, tensor):
+        """Summation"""
+        ctx.save_for_backwards(tensor)
+        result = np.sum(tensor.data)
+        return Tensor(result)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """Backward Pass"""
+        tensor,= ctx.saved_tensors
+        grad_input = np.ones_like(tensor.data) * grad_output.data 
+        return Tensor(grad_input)
+
+
 
 class Sub(Function):
     @staticmethod
