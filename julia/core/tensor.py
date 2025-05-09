@@ -94,6 +94,14 @@ class Tensor:
         self.device = device or "cpu"
         self.shape = self.data.shape
 
+        # For hooks 
+        self._is_leaf = True # user & parameter created tensors 
+        self._retain_grad = False 
+        self._grad_fn = None 
+        self._backward_hooks = {} 
+        self._next_hook_id = 0 
+        # ^^^ Think about tensor bindings to be added for the compiled autograd engine 
+
     def zero_grad(self):
         self.grad = None
 
@@ -101,7 +109,55 @@ class Tensor:
         from julia.core.ops import Dropout
         return Dropout.apply(self, p, training)
 
-    def backward(self, gradient=None):
+    # Tensor Detach stuff 
+
+    def detach(self):
+        """
+        Return a new tensor detached from computation graph 
+        Same data but does not require gradients 
+
+        Returns: 
+            Tensor: A new Tensor with the same data but no grad history 
+        """
+
+        return Tensor(self.data.copy(), requires_grad=False, device=self.device)
+
+    def detach_(self):
+        """
+        Inplace version 
+        Clears gradient and backward_node 
+
+        Returns: 
+            self: The same Tensor but it is detached from the computation graph 
+        """
+
+        self.requires_grad = False
+        self._backward_node = None 
+        self.grad = None 
+
+        return self
+
+    def clone(self):
+       """
+       Clone -> returns a new tensor with the same data and grad requirements 
+       Tracks gradients independely from the original tensor it cloned 
+
+       Returns:
+            Tensor: new tensor with a the same data and grad requirements 
+       """
+
+       return Tensor(self.data.copy(), requires_grad=self.requires_grad, device=self.device)
+
+    def retain_grad(self):
+        """
+        Gradient retention for non-leaf Tensors 
+        Default behavior: leaf Tensors created by the user or model params retain their gradients after computing the backward gradient.
+        This forces a Tensor to retain their gradient 
+        """
+        self._retain_grad = True
+        return self
+
+    def backward(self, gradient=None, retain_graph=False):
         if not self.requires_grad:
             return # Silently return if no grad required
 
@@ -185,6 +241,10 @@ class Tensor:
                              inp.grad = Tensor(grad_in_data.copy()) # Use copy
                          else:
                              inp.grad.data += grad_in_data
+        
+        if not retain_graph:
+            # Clear backward node for the output tensor 
+            self._backward_node = None 
 
 
         # Operator overloads 
