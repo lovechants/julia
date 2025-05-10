@@ -1,4 +1,5 @@
-import numpy as np 
+import numpy as np
+from julia.core.tensor import Tensor
 """
 Optimizers 
 """
@@ -491,3 +492,109 @@ class AdaGrad:
         """Clears the gradients of all optimized parameters."""
         for param in self.params:
             param.zero_grad()
+
+
+
+class NewtonOptimizer:
+    """
+    Uses the second derivative for more informed steps noting the curvature of the function as well 
+    NOT optimal for large scale problems but kind of cool for small problems and niche solutions (quasi-newton for better scale)
+    Update rule: x_new = x_old - H^(-1)deltaf(x)
+    x_new = x_old - H^(-1)∇f(x) 
+    ∇f(x) -> Gradient (first derivative)
+    H is the Hessian matrix (second derivative)
+    H^(-1) is the inverse of that matrix 
+    Hessian matrix: The square matrix of second-order partial derivatives of a scalar valued function. Describes the local curvature of a function of many variables. 
+
+    Args: 
+        params: list of parameters to optimize 
+        lr: learning rate 
+        damping: value added to the diagonal of the hessian matrix for numerical stability 
+        max_newton_iter: maximum iterations for solving the Newton system
+    """
+
+    # TODO Finish the full impl later 
+    def __init__(self, params, lr=1.0, damping=1e-4, max_newton_iter=20):
+        self.params = params
+        self.lr = lr 
+        self.damping = damping
+        self.max_newton_iter = max_newton_iter
+
+        self.total_params = sum(p.data.size for p in params)
+
+        # param mapping 
+        self.param_mapping = [] 
+        offset = 0 
+        for p in self.params:
+            size = p.data.size
+            self.param_mapping.append((offset, offset + size, p.shape))
+            offset += size 
+
+
+    def _pack_params(self):
+        """pack into 1D array"""
+        param_vec = np.zeros(self.total_params)
+        for i, p in enumerate(self.total_params):
+            start, end, _ = self.param_mapping[i]
+            param_vec[start:end] = p.data.flatten()
+
+        return param_vec
+
+    def _unpack_params(self, param_vec):
+        """unpack 1D array into the parameter array"""
+        for i, p in enumerate(self.params):
+            start, end, shape = self.param_mapping[i]
+            p.data = param_vec[start:end].reshape(shape)
+
+    
+    def compute_hessian(self):
+        """
+        Compute the full hessian matrix using second derivatives
+        This creates a NxN matrix where n is the total number of parameters
+        """
+
+        # Init hessian 
+        hessian = np.zeros((self.total_params, self.total_params))
+        for param_i, param in enumerate(self.params):
+            if param.grad is None:
+                continue 
+
+            start_i, end_i, _ = self.param_mapping[param_i]
+            param_size = param.data.size
+
+            # Reshape 
+            grad = param.grad.data.flatten()
+
+            # Compute all second derivatives w.r.t 
+
+            for idx in range(param_size):
+                flat_idx = start_i + idx 
+
+                # Create the tensors for the second backward pass 
+                # Compute -> d²L/dθᵢdθⱼ for all params \theta_{j}
+
+                second_grad_target = np.zeros_like(grad)
+                second_grad_target[idx] = 1.0 # one hot vector 
+
+                # Reset 
+                for p in self.params:
+                    if p.grad is not None:
+                        p.grad = None 
+
+
+
+                param.grad.backward(Tensor(second_grad_target), retain_graph=True)
+                
+                for param_j, p in enumerate(self.params):
+                    if p.grad is not None:
+                        start_j, end_j, _ = self.param_mapping[param_j]
+                        hessian[flat_idx, start_j:end_j] = p.grad.data.flatten()
+
+        np.fill_diagonal(hessian, hessian.diagonal() + self.damping)
+
+        return hessian
+
+    #TODO the rest later (this step function and then quasi-newton) 
+    def step(self):
+        """Single newton optimization step"""
+        pass
