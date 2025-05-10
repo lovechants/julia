@@ -45,6 +45,8 @@ class Function:
             if isinstance(result, Tensor):
                 result._backward_node = backward_node
                 result.requires_grad = True # <--- Explicitly set the flag
+                result._is_leaf = False 
+                result._grad_fn = cls.__name__
             elif isinstance(result, tuple):
                 # Ensure all tensor outputs are marked
                 processed_result = []
@@ -52,6 +54,8 @@ class Function:
                     if isinstance(r, Tensor):
                         r._backward_node = backward_node
                         r.requires_grad = True # <--- Explicitly set the flag
+                        r._is_leaf = False
+                        r._grad_fn = cls.__name__
                         processed_result.append(r)
                     else:
                         processed_result.append(r) # Keep non-tensors as is
@@ -156,92 +160,113 @@ class Tensor:
         """
         self._retain_grad = True
         return self
+    
+    def backward(self, gradient=None, retain_graph=False, create_graph=False):
+        """
+        Compute gradient of tensor w.r.t 
+        Args:
+            gradient: Gradient of the current tensor (default=None, treated as 1.0 (implied))
+            retain_graph: If True, computation graph is kept for future backward calls (default=False)
+            create_graph: If True, graph of the derivative is constructed for higher order derivatives
+        """
 
-    def backward(self, gradient=None, retain_graph=False):
         if not self.requires_grad:
-            return # Silently return if no grad required
+            return 
 
-        # --- Graph Traversal ---
         visited_nodes = set()
         topo_order_nodes = []
+
         def build_topo(node):
             if node and node not in visited_nodes:
                 visited_nodes.add(node)
                 for inp in node.inputs:
-                     if isinstance(inp, Tensor) and inp._backward_node:
-                         build_topo(inp._backward_node)
+                    if isinstance(inp, Tensor) and inp.requires_grad and inp._backward_node:
+                        build_topo(inp._backward_node)
                 topo_order_nodes.append(node)
 
-        if self._backward_node:
-             build_topo(self._backward_node)
 
-        # --- Gradient Initialization ---
-        if gradient is None:
+        if self._backward_node:
+            build_topo(self._backward_node)
+
+
+        # Init Gradient 
+        if gradient is None: 
             if self.shape == () or self.shape == (1,):
                 gradient_data = np.ones_like(self.data)
             else:
-                raise ValueError("Must specify gradient for non-scalar tensors used as root of backward()")
-        elif isinstance(gradient, Tensor):
-            gradient_data = gradient.data.copy() # Use copy
-        else:
-            gradient_data = np.array(gradient).copy() # Convert scalar/list/etc. and copy
+                raise ValueError("Must specify gradient for non-scalr tensors used as roots")
 
-        # --- Gradient Accumulation Dictionary (Tensor object -> Accumulated Grad Data) ---
-        # Initialize ONCE before the loop
+        elif isinstance(gradient, Tensor):
+            gradient_data = gradient.data.copy()
+        else:
+            gradient_data = np.array(gradient).copy()
+
         grads_tensor_keyed = {self: gradient_data}
 
-        # Assign initial gradient to self.grad attribute
+        # Assign init gradient to self.grad 
         if self.grad is None:
-            self.grad = Tensor(gradient_data.copy()) # Use copy
+            self.grad = Tensor(gradient_data.copy(), requires_grad=create_graph)
         else:
-            self.grad.data += gradient_data # Accumulate if backward called multiple times
+            if self.grad.requires_grad != create_graph:
+                self.grad = Tensor(self.grad.data + gradient_data, requires_grad=create_graph)
+            else:
+                self.grad.data += gradient_data
 
-        # --- Backpropagation Loop (SINGLE loop) ---
+        # Backprop 
         for node in reversed(topo_order_nodes):
-             # Find the output tensor 't' where t._backward_node == node
-             output_tensor = None
-             output_grad_data = None
-             for t, grad_d in grads_tensor_keyed.items():
-                 # Check if the tensor 't' has a backward node and if it's the current node
-                 if hasattr(t, '_backward_node') and t._backward_node is node:
-                     output_tensor = t
-                     output_grad_data = grad_d
-                     break # Assume one primary output for simplicity
+            output_tensor = None 
+            output_grad_data = None 
+            for t, grad_d in grads_tensor_keyed.items():
+                if hasattr(t, '_backward_node') and t._backward_node is node:
+                    output_tensor = t 
+                    output_grad_data = grad_d 
+                    break 
 
-             if output_tensor is None or output_grad_data is None:
-                 # This node's output gradient wasn't computed or needed? Skip.
-                 # This can happen if a branch of the graph doesn't lead to the final output
-                 # print(f"Skipping node {node.fn_cls.__name__} - output gradient not found in grads dict.")
-                 continue
+            if output_tensor is None or output_grad_data is None:
+                continue 
 
-             # Compute gradients for the inputs of this operation
-             # Pass a Tensor wrapper for the output gradient to backward function
-             grad_out_tensor = Tensor(output_grad_data)
-             grads_in = node.fn_cls.backward(node.ctx, grad_out_tensor)
+            grad_out_tensor = Tensor(output_grad_data, requires_grad=create_graph)
+            
+            # Apply hooks 
+            if hasattr(output_tensor, '_backward_hooks') and output_tensor._backward_hooks:
+                for hook in output_tensor._backward_hooks.values():
+                    hook_result = hook(grad_out_tensor)
+                    if hook_result is not None:
+                        if not isinstance(hook_result, Tensor):
+                            raise TypeError(f"Hook returned invalid type: {type(hook_result)}")
+                        grad_out_tensor = hook_result
 
-             if not isinstance(grads_in, tuple):
-                 grads_in = (grads_in,)
+            grads_in = node.fn_cls.backward(node.ctx, grad_out_tensor)
 
-             # Distribute gradients to the input tensors
-             if len(node.inputs) != len(grads_in):
-                 raise RuntimeError(f"Backward function {node.fn_cls.__name__} returned {len(grads_in)} gradients, but forward took {len(node.inputs)} inputs.")
+            if not isinstance(grads_in, tuple):
+                grads_in = (grads_in, )
 
-             for inp, grad_in_tensor in zip(node.inputs, grads_in):
-                 # Check if input is a Tensor that requires grad and received a gradient
-                 if isinstance(inp, Tensor) and inp.requires_grad:
-                     if grad_in_tensor is not None:
-                         grad_in_data = grad_in_tensor.data
-                         # Accumulate in grads dictionary (for further propagation)
-                         if inp not in grads_tensor_keyed:
-                             grads_tensor_keyed[inp] = grad_in_data.copy() # Use copy
-                         else:
-                             grads_tensor_keyed[inp] += grad_in_data
-                         # Accumulate in .grad attribute (for user access)
-                         if inp.grad is None:
-                             inp.grad = Tensor(grad_in_data.copy()) # Use copy
-                         else:
-                             inp.grad.data += grad_in_data
-        
+            # Distribute gradients 
+            if len(node.inputs) != len(grads_in):
+                raise RuntimeError(f"Backwards function {node.fn_cls.__name__} returned {len(grads_in)} " 
+                                   f"gradients, forward took {len(node.inputs)} inputs")
+
+            for inp, grads_in_tensor in zip(node.inputs, grads_in):
+                if isinstance(inp, Tensor) and inp.requires_grad:
+                    if grads_in_tensor is not None:
+                        grad_in_data = grads_in_tensor.data 
+
+                        if inp not in grads_tensor_keyed:
+                            grads_tensor_keyed[inp] = grad_in_data.copy()
+                        else:
+                            grads_tensor_keyed[inp] = grad_in_data
+
+                        should_retain_grad = inp._is_leaf or hasattr(inp, '_retain_grad')
+
+                        if should_retain_grad:
+                            if inp.grad is None:
+                                inp.grad = Tensor(grad_in_data.copy(), requires_grad=create_graph)
+                            else:
+                                if inp.grad.requires_grad != create_graph:
+                                    inp.grad = Tensor(inp.grad.data + grad_in_data, requires_grad=create_graph)
+                                else:
+                                    inp.grad.data += grad_in_data
+
         if not retain_graph:
             # Clear backward node for the output tensor 
             self._backward_node = None 
