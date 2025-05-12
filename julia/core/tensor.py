@@ -48,20 +48,18 @@ class Function:
                 result._is_leaf = False 
                 result._grad_fn = cls.__name__
             elif isinstance(result, tuple):
-                # Ensure all tensor outputs are marked
+                # multiple output 
                 processed_result = []
-                for r in result:
+                for i, r in enumerate(result):
                     if isinstance(r, Tensor):
                         r._backward_node = backward_node
-                        r.requires_grad = True # <--- Explicitly set the flag
-                        r._is_leaf = False
+                        r.requires_grad = True 
+                        r._is_leaf = False 
                         r._grad_fn = cls.__name__
+                        r._output_index = i 
                         processed_result.append(r)
                     else:
-                        processed_result.append(r) # Keep non-tensors as is
-                result = tuple(processed_result)
-            # Handle other potential return types if needed
-
+                        processed_result.append(r)
         # If op_requires_grad is False, result tensors keep their original flag
         return result
 
@@ -71,10 +69,30 @@ class BackwardNode:
         self.fn_cls = fn_cls
         self.ctx = ctx
         self.inputs = inputs
-        self.next_functions = [] 
+        self.next_functions = []
+        self.grad_outputs = {}
+        self.grad_output_count = 0 
+        self.num_expect_grads = None 
         for inp in inputs:
             if isinstance(inp, Tensor) and inp.requires_grad and inp._backward_node:
                 self.next_functions.append(inp._backward_node)
+
+    def accmulate_grad(self, grad, idx=0):
+        """
+        Accumlate gradient for a specfic output tensor 
+        Args:
+            frad: the gradient to accmulate 
+            idx: the index of the output tensor 
+        """
+        if idx in self.grad_outputs:
+            self.grad_outputs[idx] = self.grad_outputs[idx] + grad 
+        else:
+            self.grad_outputs[idx] = grad 
+            self.grad_output_count += 1 
+
+        if self.num_expect_grads is not None and self.grad_output_count >=self.num_expect_grads:
+            return True 
+        return False
 
 class Tensor:
     def __init__(self, data, requires_grad=False, device=None, dtype=None):
