@@ -954,3 +954,604 @@ class DilatedConv2DFunction(Function):
         grad_bias = Tensor(grad_bias_data) if bias is not None and bias.requires_grad else None
         
         return grad_input, grad_weight, grad_bias, None, None, None
+
+# Pooling functions for autograd engine 
+class MaxPool2DFunction(Function):
+    @staticmethod
+    def forward(ctx, x, kernel_size, stride=None, padding=0):
+        """
+        Forward pass for 2D Max Pooling 
+        Args:
+            x: Input tensor of the shape (batch_size, channels, height, width)
+            kernel_size: Size of the pooling window (int or tuple)
+            stride: Stride of the pooling window (int or tuple)
+            padding: Padding to be added on boht sides (int or tuple)
+        """
+
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size, kernel_size)
+
+        if stride is None:
+            stride = kernel_size
+        elif isinstance(stride, int):
+            stride = (stride, stride)
+
+        if isinstance(padding, int):
+            padding = (padding, padding)
+
+        batch_size, channels, height, width = x.shape 
+
+        out_height = ((height + 2 * padding[0] - kernel_size[0]) // stride[0]) + 1
+        out_width = ((width + 2 * padding[1] - kernel_size[1]) // stride[1]) + 1 
+
+        if padding[0] > 0 or padding[1] > 0:
+            x_padded = np.pad(
+                x.data,
+                ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])),
+                mode='constant',
+                constant_values=float('-inf')  # Use -inf for max pooling padding
+            )
+        else:
+            x_padded = x.data
+        
+        # Initialize output
+        output = np.zeros((batch_size, channels, out_height, out_width))
+        
+        # Store indices of max values for backward pass
+        max_indices = np.zeros((batch_size, channels, out_height, out_width, 2), dtype=int)
+        
+        # Perform max pooling
+        for b in range(batch_size):
+            for c in range(channels):
+                for h_out in range(out_height):
+                    for w_out in range(out_width):
+                        h_start = h_out * stride[0]
+                        h_end = min(h_start + kernel_size[0], x_padded.shape[2])
+                        w_start = w_out * stride[1]
+                        w_end = min(w_start + kernel_size[1], x_padded.shape[3])
+                        
+                        # Extract pool region
+                        pool_region = x_padded[b, c, h_start:h_end, w_start:w_end]
+                        
+                        # Find max value and its index
+                        output[b, c, h_out, w_out] = np.max(pool_region)
+                        
+                        # Find index of max value (relative to top-left of pool window)
+                        flat_idx = np.argmax(pool_region)
+                        rel_h, rel_w = np.unravel_index(flat_idx, pool_region.shape)
+                        
+                        # Store absolute indices (in padded input)
+                        max_indices[b, c, h_out, w_out, 0] = h_start + rel_h
+                        max_indices[b, c, h_out, w_out, 1] = w_start + rel_w
+        
+        # Save indices and parameters for backward pass
+        ctx.save_data(
+            max_indices=max_indices,
+            input_shape=x.shape,
+            padded_shape=x_padded.shape,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding
+        )
+        
+        return Tensor(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward pass for 2D max pooling
+        
+        Args:
+            grad_output: Gradient of loss with respect to output
+            
+        Returns:
+            Gradient of loss with respect to input and None for parameters
+        """
+        # Get saved data
+        max_indices = ctx.saved_data['max_indices']
+        input_shape = ctx.saved_data['input_shape']
+        padded_shape = ctx.saved_data['padded_shape']
+        padding = ctx.saved_data['padding']
+        
+        # Initialize gradient for padded input
+        grad_padded = np.zeros(padded_shape)
+        
+        # Get output dimensions
+        batch_size, channels, out_height, out_width = grad_output.shape
+        
+        # Distribute gradients to max value locations
+        for b in range(batch_size):
+            for c in range(channels):
+                for h_out in range(out_height):
+                    for w_out in range(out_width):
+                        # Get position of max value in padded input
+                        h_max, w_max = max_indices[b, c, h_out, w_out]
+                        
+                        # Add gradient to that position
+                        grad_padded[b, c, h_max, w_max] += grad_output.data[b, c, h_out, w_out]
+        
+        # Remove padding if necessary
+        if padding[0] > 0 or padding[1] > 0:
+            grad_input = grad_padded[:, :, padding[0]:padded_shape[2]-padding[0], padding[1]:padded_shape[3]-padding[1]]
+        else:
+            grad_input = grad_padded
+            
+        # Return gradients for inputs and None for parameters
+        return Tensor(grad_input), None, None, None
+
+
+class AvgPool2DFunction(Function):
+    @staticmethod
+    def forward(ctx, x, kernel_size, stride=None, padding=0, count_include_pad=True):
+        """
+        Forward pass for 2D average pooling
+        
+        Args:
+            x: Input tensor of shape (batch_size, channels, height, width)
+            kernel_size: Size of the pooling window (int or tuple)
+            stride: Stride of the pooling window (int or tuple)
+            padding: Padding to be added on both sides (int or tuple)
+            count_include_pad: Whether to include padding in averaging calculation
+            
+        Returns:
+            Output tensor of shape (batch_size, channels, out_height, out_width)
+        """
+        # Handle scalar and tuple inputs
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size, kernel_size)
+        
+        if stride is None:
+            stride = kernel_size
+        elif isinstance(stride, int):
+            stride = (stride, stride)
+        
+        if isinstance(padding, int):
+            padding = (padding, padding)
+        
+        # Get input dimensions
+        batch_size, channels, height, width = x.shape
+        
+        # Calculate output dimensions
+        out_height = ((height + 2 * padding[0] - kernel_size[0]) // stride[0]) + 1
+        out_width = ((width + 2 * padding[1] - kernel_size[1]) // stride[1]) + 1
+        
+        # Apply padding if needed
+        if padding[0] > 0 or padding[1] > 0:
+            x_padded = np.pad(
+                x.data,
+                ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])),
+                mode='constant',
+                constant_values=0  # Use 0 for average pooling padding
+            )
+        else:
+            x_padded = x.data
+        
+        # Initialize output
+        output = np.zeros((batch_size, channels, out_height, out_width))
+        
+        # Store window shapes for backward pass
+        window_shapes = np.zeros((out_height, out_width, 2), dtype=int)
+        
+        # Perform average pooling
+        for h_out in range(out_height):
+            for w_out in range(out_width):
+                h_start = h_out * stride[0]
+                h_end = min(h_start + kernel_size[0], x_padded.shape[2])
+                w_start = w_out * stride[1]
+                w_end = min(w_start + kernel_size[1], x_padded.shape[3])
+                
+                # Get actual window size (might be smaller at edges)
+                window_h = h_end - h_start
+                window_w = w_end - w_start
+                window_shapes[h_out, w_out] = [window_h, window_w]
+                
+                # Calculate average
+                if count_include_pad:
+                    # Divide by the full kernel size
+                    divisor = kernel_size[0] * kernel_size[1]
+                else:
+                    # Divide by the actual window size
+                    divisor = window_h * window_w
+                
+                # Extract pool region and compute average
+                for b in range(batch_size):
+                    for c in range(channels):
+                        pool_region = x_padded[b, c, h_start:h_end, w_start:w_end]
+                        output[b, c, h_out, w_out] = np.sum(pool_region) / divisor
+        
+        # Save parameters for backward pass
+        ctx.save_data(
+            input_shape=x.shape,
+            padded_shape=x_padded.shape,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            count_include_pad=count_include_pad,
+            window_shapes=window_shapes
+        )
+        
+        return Tensor(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward pass for 2D average pooling
+        
+        Args:
+            grad_output: Gradient of loss with respect to output
+            
+        Returns:
+            Gradient of loss with respect to input and None for parameters
+        """
+        # Get saved data
+        input_shape = ctx.saved_data['input_shape']
+        padded_shape = ctx.saved_data['padded_shape']
+        kernel_size = ctx.saved_data['kernel_size']
+        stride = ctx.saved_data['stride']
+        padding = ctx.saved_data['padding']
+        count_include_pad = ctx.saved_data['count_include_pad']
+        window_shapes = ctx.saved_data['window_shapes']
+        
+        # Initialize gradient for padded input
+        grad_padded = np.zeros(padded_shape)
+        
+        # Get output dimensions
+        batch_size, channels, out_height, out_width = grad_output.shape
+        
+        # Distribute gradients evenly to all positions in each window
+        for h_out in range(out_height):
+            for w_out in range(out_width):
+                h_start = h_out * stride[0]
+                h_end = min(h_start + kernel_size[0], padded_shape[2])
+                w_start = w_out * stride[1]
+                w_end = min(w_start + kernel_size[1], padded_shape[3])
+                
+                # Get window size for this output position
+                window_h, window_w = window_shapes[h_out, w_out]
+                
+                # Calculate gradient scaling factor
+                if count_include_pad:
+                    # Division was by full kernel size
+                    scale = 1.0 / (kernel_size[0] * kernel_size[1])
+                else:
+                    # Division was by actual window size
+                    scale = 1.0 / (window_h * window_w)
+                
+                # Add scaled gradient to all positions in the window
+                for b in range(batch_size):
+                    for c in range(channels):
+                        grad_value = grad_output.data[b, c, h_out, w_out] * scale
+                        grad_padded[b, c, h_start:h_end, w_start:w_end] += grad_value
+        
+        # Remove padding if necessary
+        if padding[0] > 0 or padding[1] > 0:
+            grad_input = grad_padded[:, :, padding[0]:padded_shape[2]-padding[0], padding[1]:padded_shape[3]-padding[1]]
+        else:
+            grad_input = grad_padded
+        
+        # Return gradients for inputs and None for parameters
+        return Tensor(grad_input), None, None, None, None
+
+
+class AdaptiveMaxPool2DFunction(Function):
+    @staticmethod
+    def forward(ctx, x, output_size):
+        """
+        Forward pass for 2D adaptive max pooling
+        
+        Args:
+            x: Input tensor of shape (batch_size, channels, height, width)
+            output_size: Tuple of (output_height, output_width)
+            
+        Returns:
+            Output tensor of shape (batch_size, channels, output_height, output_width)
+        """
+        # Get input dimensions
+        batch_size, channels, in_height, in_width = x.shape
+        out_height, out_width = output_size
+        
+        # Calculate stride for each output position
+        stride_h = in_height / out_height
+        stride_w = in_width / out_width
+        
+        # Initialize output
+        output = np.zeros((batch_size, channels, out_height, out_width))
+        
+        # Store max indices for backward pass
+        max_indices = np.zeros((batch_size, channels, out_height, out_width, 2), dtype=int)
+        
+        # Perform adaptive max pooling
+        for b in range(batch_size):
+            for c in range(channels):
+                for h_out in range(out_height):
+                    # Calculate input window boundaries for this output position
+                    h_start = int(np.floor(h_out * stride_h))
+                    h_end = int(np.ceil((h_out + 1) * stride_h))
+                    h_end = min(h_end, in_height)  # Ensure we don't go out of bounds
+                    
+                    for w_out in range(out_width):
+                        # Calculate input window boundaries for this output position
+                        w_start = int(np.floor(w_out * stride_w))
+                        w_end = int(np.ceil((w_out + 1) * stride_w))
+                        w_end = min(w_end, in_width)  # Ensure we don't go out of bounds
+                        
+                        # Extract pool region
+                        pool_region = x.data[b, c, h_start:h_end, w_start:w_end]
+                        
+                        # Find max value and its position
+                        max_val = np.max(pool_region)
+                        output[b, c, h_out, w_out] = max_val
+                        
+                        # Find position of max value
+                        max_pos = np.unravel_index(np.argmax(pool_region), pool_region.shape)
+                        
+                        # Store absolute indices
+                        max_indices[b, c, h_out, w_out, 0] = h_start + max_pos[0]
+                        max_indices[b, c, h_out, w_out, 1] = w_start + max_pos[1]
+        
+        # Save for backward
+        ctx.save_data(
+            input_shape=x.shape,
+            max_indices=max_indices
+        )
+        
+        return Tensor(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward pass for adaptive max pooling
+        
+        Args:
+            grad_output: Gradient of loss with respect to output
+            
+        Returns:
+            Gradient of loss with respect to input and None for output_size
+        """
+        # Get saved data
+        input_shape = ctx.saved_data['input_shape']
+        max_indices = ctx.saved_data['max_indices']
+        
+        # Initialize gradient for input
+        grad_input = np.zeros(input_shape)
+        
+        # Get dimensions
+        batch_size, channels = input_shape[:2]
+        out_height, out_width = grad_output.shape[2:]
+        
+        # Distribute gradients to max value locations
+        for b in range(batch_size):
+            for c in range(channels):
+                for h_out in range(out_height):
+                    for w_out in range(out_width):
+                        # Get max position
+                        h_max, w_max = max_indices[b, c, h_out, w_out]
+                        
+                        # Add gradient to that position
+                        grad_input[b, c, h_max, w_max] += grad_output.data[b, c, h_out, w_out]
+        
+        return Tensor(grad_input), None
+
+
+
+class AdaptiveAvgPool2DFunction(Function):
+    @staticmethod
+    def forward(ctx, x, output_size):
+        """
+        Forward pass for 2D adaptive average pooling
+        
+        Args:
+            x: Input tensor of shape (batch_size, channels, height, width)
+            output_size: Tuple of (output_height, output_width)
+            
+        Returns:
+            Output tensor of shape (batch_size, channels, output_height, output_width)
+        """
+        # Get input dimensions
+        batch_size, channels, in_height, in_width = x.shape
+        out_height, out_width = output_size
+        
+        # Calculate stride and kernel size for each output position
+        stride_h = in_height / out_height
+        stride_w = in_width / out_width
+        
+        # Initialize output
+        output = np.zeros((batch_size, channels, out_height, out_width))
+        
+        # Store window indices for backward pass
+        window_indices = np.zeros((out_height, out_width, 4), dtype=int)
+        
+        # Perform adaptive average pooling
+        for h_out in range(out_height):
+            # Calculate input window boundaries for this output position
+            h_start = int(np.floor(h_out * stride_h))
+            h_end = int(np.ceil((h_out + 1) * stride_h))
+            h_end = min(h_end, in_height)  # Ensure we don't go out of bounds
+            
+            for w_out in range(out_width):
+                # Calculate input window boundaries for this output position
+                w_start = int(np.floor(w_out * stride_w))
+                w_end = int(np.ceil((w_out + 1) * stride_w))
+                w_end = min(w_end, in_width)  # Ensure we don't go out of bounds
+                
+                # Store window indices
+                window_indices[h_out, w_out] = [h_start, h_end, w_start, w_end]
+                
+                # Calculate average for each batch and channel
+                for b in range(batch_size):
+                    for c in range(channels):
+                        # Extract pool region
+                        pool_region = x.data[b, c, h_start:h_end, w_start:w_end]
+                        # Compute average
+                        output[b, c, h_out, w_out] = np.mean(pool_region)
+        
+        # Save for backward
+        ctx.save_data(
+            input_shape=x.shape,
+            window_indices=window_indices
+        )
+        
+        return Tensor(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward pass for adaptive average pooling
+        
+        Args:
+            grad_output: Gradient of loss with respect to output
+            
+        Returns:
+            Gradient of loss with respect to input and None for output_size
+        """
+        # Get saved data
+        input_shape = ctx.saved_data['input_shape']
+        window_indices = ctx.saved_data['window_indices']
+        
+        # Initialize gradient for input
+        grad_input = np.zeros(input_shape)
+        
+        # Get dimensions
+        batch_size, channels = input_shape[:2]
+        out_height, out_width = grad_output.shape[2:]
+        
+        # Distribute gradients to each position in the input
+        for h_out in range(out_height):
+            for w_out in range(out_width):
+                # Get window indices
+                h_start, h_end, w_start, w_end = window_indices[h_out, w_out]
+                
+                # Calculate number of elements in the window
+                num_elements = (h_end - h_start) * (w_end - w_start)
+                
+                # Distribute gradient evenly across window
+                scale = 1.0 / num_elements
+                
+                for b in range(batch_size):
+                    for c in range(channels):
+                        # Get gradient
+                        grad_val = grad_output.data[b, c, h_out, w_out] * scale
+                        
+                        # Add to all positions in the window
+                        grad_input[b, c, h_start:h_end, w_start:w_end] += grad_val
+        
+        return Tensor(grad_input), None
+
+class GlobalAvgPool2DFunction(Function):
+    @staticmethod
+    def forward(ctx, x):
+        """
+        Forward pass for 2D global average pooling
+        
+        Args:
+            x: Input tensor of shape (batch_size, channels, height, width)
+            
+        Returns:
+            Output tensor of shape (batch_size, channels, 1, 1)
+        """
+        # Get input dimensions
+        batch_size, channels, height, width = x.shape
+        
+        # Compute global average
+        output = np.mean(x.data, axis=(2, 3), keepdims=True)
+        
+        # Save dimensions for backward pass
+        ctx.save_data(input_shape=x.shape)
+        
+        return Tensor(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward pass for global average pooling
+        
+        Args:
+            grad_output: Gradient of loss with respect to output (shape: batch_size, channels, 1, 1)
+            
+        Returns:
+            Gradient of loss with respect to input
+        """
+        # Get saved data
+        input_shape = ctx.saved_data['input_shape']
+        
+        # Get height and width
+        height, width = input_shape[2:]
+        num_elements = height * width
+        
+        # Scale gradient by 1/num_elements
+        scale = 1.0 / num_elements
+        
+        # Distribute gradient evenly to all spatial positions
+        grad_input = np.ones(input_shape) * scale * grad_output.data
+        
+        return Tensor(grad_input)
+
+
+class GlobalMaxPool2DFunction(Function):
+    @staticmethod
+    def forward(ctx, x):
+        """
+        Forward pass for 2D global max pooling
+        
+        Args:
+            x: Input tensor of shape (batch_size, channels, height, width)
+            
+        Returns:
+            Output tensor of shape (batch_size, channels, 1, 1)
+        """
+        # Get input dimensions
+        batch_size, channels, height, width = x.shape
+        
+        # Compute global max
+        output = np.max(x.data, axis=(2, 3), keepdims=True)
+        
+        # Find positions of max values for each (batch, channel)
+        max_indices = np.zeros((batch_size, channels, 2), dtype=int)
+        
+        for b in range(batch_size):
+            for c in range(channels):
+                # Flatten spatial dimensions
+                flattened = x.data[b, c].reshape(-1)
+                # Find index of max value
+                flat_idx = np.argmax(flattened)
+                # Convert to 2D index
+                h_idx, w_idx = np.unravel_index(flat_idx, (height, width))
+                # Store indices
+                max_indices[b, c] = [h_idx, w_idx]
+        
+        # Save dimensions and max indices for backward pass
+        ctx.save_data(input_shape=x.shape, max_indices=max_indices)
+        
+        return Tensor(output)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        Backward pass for global max pooling
+        
+        Args:
+            grad_output: Gradient of loss with respect to output (shape: batch_size, channels, 1, 1)
+            
+        Returns:
+            Gradient of loss with respect to input
+        """
+        # Get saved data
+        input_shape = ctx.saved_data['input_shape']
+        max_indices = ctx.saved_data['max_indices']
+        
+        # Initialize gradient for input
+        grad_input = np.zeros(input_shape)
+        
+        # Get dimensions
+        batch_size, channels = input_shape[:2]
+        
+        # Distribute gradients to max value locations
+        for b in range(batch_size):
+            for c in range(channels):
+                # Get position of max value
+                h_max, w_max = max_indices[b, c]
+                
+                # Add gradient to that position
+                grad_input[b, c, h_max, w_max] = grad_output.data[b, c, 0, 0]
+        
+        return Tensor(grad_input)

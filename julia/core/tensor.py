@@ -272,7 +272,7 @@ class Tensor:
                         if inp not in grads_tensor_keyed:
                             grads_tensor_keyed[inp] = grad_in_data.copy()
                         else:
-                            grads_tensor_keyed[inp] = grad_in_data
+                            grads_tensor_keyed[inp] += grad_in_data
 
                         should_retain_grad = inp._is_leaf or hasattr(inp, '_retain_grad')
 
