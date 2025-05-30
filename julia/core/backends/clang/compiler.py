@@ -21,7 +21,7 @@ class ClangCompiler:
     """
 
     def __init__(self):
-        if not CLANG_AVAILABlE:
+        if not CLANG_AVAILABLE:
             raise ImportError("clang bindings required")
         try:
             cl.Config.set_library_file('/usr/lib/llvm-10/lib/libclang.so') # fix this 

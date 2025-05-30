@@ -359,5 +359,6 @@ class IRGraph:
         # - Dead code elimination
         pass
 
-
-
+# TODO enhance the shape representation with more dynamic dimensions
+class Shape:
+    pass

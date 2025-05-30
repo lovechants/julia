@@ -10,7 +10,7 @@ try:
     import pycuda.compiler 
     from pycuda.compiler import SourceModule
     CUDA_AVAILABLE = True
-expect ImportError:
+except ImportError:
     CUDA_AVAILABLE = False
     print("Warning: CUDA not available")
 
