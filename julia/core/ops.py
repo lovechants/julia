@@ -127,7 +127,41 @@ class Sum(Function):
         grad_input = np.ones_like(tensor.data) * grad_output.data 
         return Tensor(grad_input)
 
+class Exp(Function):
+    @staticmethod
+    def forward(ctx, a):
+        ctx.save_for_backwards(a)
+        result = np.exp(a.data)
+        return Tensor(result, requires_grad=a.requires_grad)
 
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, = ctx.saved_tensors
+        grad = grad_output.data * np.exp(a.data)
+        return Tensor(grad)
+
+class Log(Function):
+    @staticmethod
+    def forward(ctx, a):
+        ctx.save_for_backwards(a)
+        result = np.log(a.data + 1e-8) # Epsilon for stability #TODO pure math functions for calculations 
+        return Tensor(result, requires_grad=a.requires_grad)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, = ctx.saved_tensors
+        grad = grad_output.data / (a.data + 1e-8)
+        return Tensor(grad)
+
+"""
+TODO: Some other core operations to finish 
+POW 
+Mean
+Variance (Var)
+Abs
+Max | Min 
+(Extend these to tensor class + add to op registry)
+"""
 
 class Sub(Function):
     @staticmethod
