@@ -1,8 +1,77 @@
 import numpy as np
 from julia.core.tensor import Tensor
+
 """
-Optimizers 
+Learning Rate Schedulers
 """
+import json 
+from abc import ABC, abstractmethod 
+from typing import Dict, Any, List, Optional, Callable
+
+class LRScheduler(ABC):
+    """Base class for LRS"""
+
+    def __init__(self, optimizer, last_epoch=-1):
+        self.optimizer = optimizer
+        self.last_epoch = last_epoch
+        self.base_lrs = [group['lr'] for group in self.optimizer.param_groups]
+
+    @abstractmethod 
+    def get_lr(self) -> List[float]:
+        """Calculate learning rate for current epoch"""
+        pass 
+
+    def step(self, epoch=None):
+        """Update lr"""
+        if epoch is None:
+            epoch = self.last_epoch + 1
+        self.last_epoch = epoch 
+
+        lrs = self.get_lr()
+        for param_group, lr in zip(self.optimizer.param_groups, lrs):
+            param_group['lr'] = lr 
+
+class StepLR(LRScheduler):
+    """Decay learning rate by gamma every step size"""
+
+    def __init__(self, optimizer, step_size: int, gamma: float = 0.1, last_epoch = -1):
+        self.step_size = step_size
+        self.gamma = gamma
+        super().__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        return [base_lr * self.gamma ** (self.last_epoch // self.step_size) for base_lr in self.base_lrs]
+
+class ExponentialLR(LRScheduler):
+    """Decay learning rate by gamma every epoch"""
+
+    def __init__(self, optimizer, gamma: float, last_epoch = -1):
+        self.gamma = gamma
+        super().__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        return [base_lr * self.gamma ** self.last_epoch for base_lr in self.base_lrs]
+
+class CosineAnnealingLR(LRScheduler):
+    """
+    Cosince annealing learning rate scheduler
+    Cosine Annealing is a type of learning rate schedule that has the effect of starting with a large learning rate that is relatively rapidly decreased to a minimum value before being increased rapidly again. The resetting of the learning rate acts like a simulated restart of the learning process and the re-use of good weights as the starting point of the restart is referred to as a "warm restart" in contrast to a "cold restart" where a new set of small random numbers may be used as a starting point. https://paperswithcode.com/method/cosine-annealing
+    """
+
+    def __init__(self, optimizer, T_max: int, eta_min: float = 0, last_epoch = -1):
+        self.T_max = T_max
+        self.eta_min = eta_min
+        super().__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        return [self.eta_min + (base_lr - self.eta_min) * (1 + np.cos(np.pi * self.last_epoch / self.T_max)) / 2 for base_lr in self.base_lrs]
+
+
+"""
+Optimizers
+"""
+
+#TODO Optimizers need better state handling for LR and checkpointing 
 
 """
 SGD 
