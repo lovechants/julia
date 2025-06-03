@@ -5,7 +5,45 @@ Skeleton development environment for BearAI machine learning and stats library
 
 All associated papers + derivations included (where applicable)
 
-LLVM compilation + ONNX runtime + Primitives
+Educational ML/DL framework built from scratch 
+
+---
+
+## Features 
+
+- AutoGrad
+- Multiple Backends
+    - LLVM 
+    - CUDA
+    - Metal
+    - Clang 
+- Onnx Support 
+- Terminal vis support through [Aliyah](https://github.com/lovechants/Aliyah/tree/main)
+
+## Contributing 
+Any welcome.
+```bash
+Fork the repo
+git clone https://github.com/your-username/your-fork
+Create a branch: git checkout -b your-feature-branch
+Make changes
+Test 
+Commit your changes: git commit -m "Add feature-that-you-added"
+Push to the branch: git push origin your-feature-branch
+Submit a pr
+```
+Please add tests.
+
+#### Requirements
+1. Python3
+2. Numpy
+
+Optional
+
+3. llvmlite
+4. pycuda
+5. onnx 
+6. clang 
 
 ## Testing 
 
@@ -14,6 +52,17 @@ LLVM compilation + ONNX runtime + Primitives
 ```bash
 ~/julia pytest -vvs [additional args]
 ```
+
+## Roadmap
+- [ ] Finish full python autograd impl 
+- [ ] More optimization passes 
+- [ ] Model quantization 
+- [ ] Full model zoo 
+- [ ] In depth summary 
+- [ ] Rust or zig autograd engine (Long term)
+- [ ] Remove numpy dependancy (Long term)
+
+
 ## Current TODO 
 - [x] Finish IR 
     - [ ] Fix test `shape_test::matmul`
@@ -24,14 +73,16 @@ LLVM compilation + ONNX runtime + Primitives
 - [ ] Backend support 
     - [ ] CUDA 
     - [ ] OpenCL 
-    - [ ] Metal (arm) -> Same shader (swift/obj c) dynamic lib needed (afaik)
+    - [ ] Metal 
     - [x] CLANG 
     - [ ] ZIG 
     - [ ] WASM 
     - [ ] TPU/NPU?
     - [ ] x86
-- [ ] Pure NN primitives 
-    - [ ] Layers 
+- [ ] Pure NN primitives  
+    - [ ] Recurrent autograd 
+    - [ ] Attention blocks
+    - [ ] RL components
     - [x] Optimizers 
         - [x] Muon 
         - [x] Adam 
@@ -43,5 +94,8 @@ LLVM compilation + ONNX runtime + Primitives
         - [x] Sigmoid 
 - [ ] Profiling tools 
     - [ ] Easy Vis + Metric tracking 
+    - [x] Profiler
 - [ ] Model Zoo + Stats
-- [ ] Datasets  
+- [ ] Datasets
+- [ ] Benchmarking util
+- [ ] Testing suite util
