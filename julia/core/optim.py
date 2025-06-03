@@ -7,14 +7,17 @@ Learning Rate Schedulers
 import json 
 from abc import ABC, abstractmethod 
 from typing import Dict, Any, List, Optional, Callable
+import pickle
 
 class LRScheduler(ABC):
-    """Base class for LRS"""
+    """Base class for LRS with state management"""
 
-    def __init__(self, optimizer, last_epoch=-1):
+    def __init__(self, optimizer, last_epoch=-1, verbose=False):
         self.optimizer = optimizer
         self.last_epoch = last_epoch
+        self.verbose = verbose
         self.base_lrs = [group['lr'] for group in self.optimizer.param_groups]
+        self._step_count = 0
 
     @abstractmethod 
     def get_lr(self) -> List[float]:
@@ -22,57 +25,326 @@ class LRScheduler(ABC):
         pass 
 
     def step(self, epoch=None):
-        """Update lr"""
+        """Update lr with state tracking"""
         if epoch is None:
             epoch = self.last_epoch + 1
-        self.last_epoch = epoch 
+        self.last_epoch = epoch
+        self._step_count += 1
 
         lrs = self.get_lr()
+        
+        if self.verbose:
+            print(f'Epoch {epoch}: adjusting learning rate to {lrs}')
+            
         for param_group, lr in zip(self.optimizer.param_groups, lrs):
-            param_group['lr'] = lr 
+            param_group['lr'] = lr
+
+    def state_dict(self) -> Dict[str, Any]:
+        """Return the state of the scheduler"""
+        return {
+            'last_epoch': self.last_epoch,
+            'base_lrs': self.base_lrs,
+            '_step_count': self._step_count,
+            'verbose': self.verbose
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        """Load the state of the scheduler"""
+        self.last_epoch = state_dict.get('last_epoch', -1)
+        self.base_lrs = state_dict.get('base_lrs', self.base_lrs)
+        self._step_count = state_dict.get('_step_count', 0)
+        self.verbose = state_dict.get('verbose', False)
+
+    def get_last_lr(self) -> List[float]:
+        """Return last computed learning rate"""
+        return [group['lr'] for group in self.optimizer.param_groups]
 
 class StepLR(LRScheduler):
-    """Decay learning rate by gamma every step size"""
+    """Decay learning rate by gamma every step size with state management"""
 
-    def __init__(self, optimizer, step_size: int, gamma: float = 0.1, last_epoch = -1):
+    def __init__(self, optimizer, step_size: int, gamma: float = 0.1, last_epoch = -1, verbose=False):
         self.step_size = step_size
         self.gamma = gamma
-        super().__init__(optimizer, last_epoch)
+        super().__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
         return [base_lr * self.gamma ** (self.last_epoch // self.step_size) for base_lr in self.base_lrs]
 
-class ExponentialLR(LRScheduler):
-    """Decay learning rate by gamma every epoch"""
+    def state_dict(self) -> Dict[str, Any]:
+        state = super().state_dict()
+        state.update({
+            'step_size': self.step_size,
+            'gamma': self.gamma
+        })
+        return state
 
-    def __init__(self, optimizer, gamma: float, last_epoch = -1):
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        super().load_state_dict(state_dict)
+        self.step_size = state_dict.get('step_size', self.step_size)
+        self.gamma = state_dict.get('gamma', self.gamma)
+
+class ExponentialLR(LRScheduler):
+    """Decay learning rate by gamma every epoch with state management"""
+
+    def __init__(self, optimizer, gamma: float, last_epoch = -1, verbose=False):
         self.gamma = gamma
-        super().__init__(optimizer, last_epoch)
+        super().__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
         return [base_lr * self.gamma ** self.last_epoch for base_lr in self.base_lrs]
 
-class CosineAnnealingLR(LRScheduler):
-    """
-    Cosince annealing learning rate scheduler
-    Cosine Annealing is a type of learning rate schedule that has the effect of starting with a large learning rate that is relatively rapidly decreased to a minimum value before being increased rapidly again. The resetting of the learning rate acts like a simulated restart of the learning process and the re-use of good weights as the starting point of the restart is referred to as a "warm restart" in contrast to a "cold restart" where a new set of small random numbers may be used as a starting point. https://paperswithcode.com/method/cosine-annealing
-    """
+    def state_dict(self) -> Dict[str, Any]:
+        state = super().state_dict()
+        state['gamma'] = self.gamma
+        return state
 
-    def __init__(self, optimizer, T_max: int, eta_min: float = 0, last_epoch = -1):
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        super().load_state_dict(state_dict)
+        self.gamma = state_dict.get('gamma', self.gamma)
+
+class CosineAnnealingLR(LRScheduler):
+    """Cosine annealing learning rate scheduler with state management"""
+
+    def __init__(self, optimizer, T_max: int, eta_min: float = 0, last_epoch = -1, verbose=False):
         self.T_max = T_max
         self.eta_min = eta_min
-        super().__init__(optimizer, last_epoch)
+        super().__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
         return [self.eta_min + (base_lr - self.eta_min) * (1 + np.cos(np.pi * self.last_epoch / self.T_max)) / 2 for base_lr in self.base_lrs]
 
+    def state_dict(self) -> Dict[str, Any]:
+        state = super().state_dict()
+        state.update({
+            'T_max': self.T_max,
+            'eta_min': self.eta_min
+        })
+        return state
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        super().load_state_dict(state_dict)
+        self.T_max = state_dict.get('T_max', self.T_max)
+        self.eta_min = state_dict.get('eta_min', self.eta_min)
+
+class ReduceLROnPlateau(LRScheduler):
+    """Reduce learning rate when metric has stopped improving"""
+    
+    def __init__(self, optimizer, mode='min', factor=0.1, patience=10, threshold=1e-4, 
+                 threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-8, verbose=False):
+        self.mode = mode
+        self.factor = factor
+        self.patience = patience
+        self.threshold = threshold
+        self.threshold_mode = threshold_mode
+        self.cooldown = cooldown
+        self.min_lr = min_lr
+        self.eps = eps
+        
+        # State tracking
+        self.best = None
+        self.num_bad_epochs = 0
+        self.mode_worse = None
+        self.cooldown_counter = 0
+        self._init_is_better()
+        
+        super().__init__(optimizer, last_epoch=-1, verbose=verbose)
+        
+    def _init_is_better(self):
+        if self.mode == 'min':
+            self.mode_worse = np.inf
+        else:  # mode == 'max'
+            self.mode_worse = -np.inf
+
+    def step(self, metrics):
+        """Step should be called after validation to check metric"""
+        current = float(metrics)
+        
+        if self.best is None:
+            self.best = current
+        
+        if self.is_better(current, self.best):
+            self.best = current
+            self.num_bad_epochs = 0
+        else:
+            self.num_bad_epochs += 1
+            
+        if self.cooldown_counter > 0:
+            self.cooldown_counter -= 1
+            self.num_bad_epochs = 0
+            
+        if self.num_bad_epochs > self.patience:
+            self._reduce_lr()
+            self.cooldown_counter = self.cooldown
+            self.num_bad_epochs = 0
+            
+    def _reduce_lr(self):
+        for i, param_group in enumerate(self.optimizer.param_groups):
+            old_lr = param_group['lr']
+            new_lr = max(old_lr * self.factor, self.min_lr)
+            if old_lr - new_lr > self.eps:
+                param_group['lr'] = new_lr
+                if self.verbose:
+                    print(f'Reducing learning rate of group {i} to {new_lr:.4e}.')
+                    
+    def is_better(self, a, best):
+        if self.mode == 'min' and self.threshold_mode == 'rel':
+            rel_epsilon = 1. - self.threshold
+            return a < best * rel_epsilon
+        elif self.mode == 'min' and self.threshold_mode == 'abs':
+            return a < best - self.threshold
+        elif self.mode == 'max' and self.threshold_mode == 'rel':
+            rel_epsilon = self.threshold + 1.
+            return a > best * rel_epsilon
+        else:  # mode == 'max' and threshold_mode == 'abs':
+            return a > best + self.threshold
+
+    def get_lr(self):
+        return [group['lr'] for group in self.optimizer.param_groups]
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {
+            'best': self.best,
+            'num_bad_epochs': self.num_bad_epochs,
+            'cooldown_counter': self.cooldown_counter,
+            'mode': self.mode,
+            'factor': self.factor,
+            'patience': self.patience,
+            'threshold': self.threshold,
+            'threshold_mode': self.threshold_mode,
+            'cooldown': self.cooldown,
+            'min_lr': self.min_lr,
+            'eps': self.eps,
+            'verbose': self.verbose
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        self.best = state_dict.get('best')
+        self.num_bad_epochs = state_dict.get('num_bad_epochs', 0)
+        self.cooldown_counter = state_dict.get('cooldown_counter', 0)
+        # Load other parameters as needed
 
 """
 Optimizers
 """
 
 #TODO Optimizers need better state handling for LR and checkpointing 
-
+class OptimizerBase:
+    """Base optimizer class with enhanced state management"""
+    
+    def __init__(self, params, defaults):
+        self.defaults = defaults
+        self.state = {}
+        self.param_groups = []
+        
+        # Support both list of parameters and parameter groups
+        if isinstance(params, list) and all(isinstance(p, Tensor) for p in params):
+            # Single parameter group
+            param_groups = [{'params': params}]
+        else:
+            # Multiple parameter groups
+            param_groups = list(params)
+            
+        for param_group in param_groups:
+            self.add_param_group(param_group)
+    
+    def add_param_group(self, param_group):
+        """Add a parameter group to the optimizer"""
+        # Merge with defaults
+        for key, value in self.defaults.items():
+            param_group.setdefault(key, value)
+        
+        # Ensure params is a list
+        if not isinstance(param_group['params'], list):
+            param_group['params'] = list(param_group['params'])
+            
+        self.param_groups.append(param_group)
+    
+    def zero_grad(self):
+        """Clear gradients for all parameters"""
+        for group in self.param_groups:
+            for p in group['params']:
+                if hasattr(p, 'grad') and p.grad is not None:
+                    p.grad = None
+    
+    def state_dict(self):
+        """Return the state of the optimizer"""
+        state_dict = {
+            'state': {},
+            'param_groups': []
+        }
+        
+        # Save parameter states
+        for param_id, state in self.state.items():
+            # Convert numpy arrays to lists for JSON serialization
+            serialized_state = {}
+            for key, value in state.items():
+                if isinstance(value, np.ndarray):
+                    serialized_state[key] = value.tolist()
+                else:
+                    serialized_state[key] = value
+            state_dict['state'][param_id] = serialized_state
+        
+        # Save parameter groups (without the actual parameters)
+        for group in self.param_groups:
+            group_copy = {k: v for k, v in group.items() if k != 'params'}
+            group_copy['param_ids'] = [id(p) for p in group['params']]
+            state_dict['param_groups'].append(group_copy)
+            
+        return state_dict
+    
+    def load_state_dict(self, state_dict):
+        """Load the state of the optimizer"""
+        # Create mapping from param_id to parameter
+        param_map = {}
+        for group in self.param_groups:
+            for param in group['params']:
+                param_map[id(param)] = param
+        
+        # Load state
+        self.state = {}
+        for param_id_str, state in state_dict['state'].items():
+            param_id = int(param_id_str)
+            if param_id in param_map:
+                # Convert lists back to numpy arrays
+                deserialized_state = {}
+                for key, value in state.items():
+                    if isinstance(value, list):
+                        deserialized_state[key] = np.array(value)
+                    else:
+                        deserialized_state[key] = value
+                self.state[param_id] = deserialized_state
+        
+        # Update parameter groups (excluding params which are already set)
+        for i, group_state in enumerate(state_dict['param_groups']):
+            if i < len(self.param_groups):
+                for key, value in group_state.items():
+                    if key != 'param_ids':
+                        self.param_groups[i][key] = value
+    
+    def save_checkpoint(self, filepath, additional_info=None):
+        """Save optimizer state to file"""
+        checkpoint = {
+            'optimizer_state': self.state_dict(),
+            'optimizer_class': self.__class__.__name__
+        }
+        
+        if additional_info:
+            checkpoint.update(additional_info)
+            
+        with open(filepath, 'wb') as f:
+            pickle.dump(checkpoint, f)
+    
+    def load_checkpoint(self, filepath):
+        """Load optimizer state from file"""
+        with open(filepath, 'rb') as f:
+            checkpoint = pickle.load(f)
+            
+        if checkpoint['optimizer_class'] != self.__class__.__name__:
+            raise ValueError(f"Checkpoint is for {checkpoint['optimizer_class']}, "
+                           f"but loading into {self.__class__.__name__}")
+                           
+        self.load_state_dict(checkpoint['optimizer_state'])
+        return checkpoint
 """
 SGD 
 https://www.semanticscholar.org/paper/A-Stochastic-Approximation-Method-Robbins/34ddd8865569c2c32dec9bf7ffc817ff42faaa01?p2df
