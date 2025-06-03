@@ -163,6 +163,153 @@ Max | Min
 (Extend these to tensor class + add to op registry)
 """
 
+class Pow(Function):
+    @staticmethod
+    def forward(ctx, a, power):
+        ctx.save_for_backwards(a)
+        ctx.save_data(power=power)
+        result = np.power(a.data, power)
+        return Tensor(result, requires_grad=a.requires_grad)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, = ctx.saved_tensors
+        power = ctx.saved_data['power']
+        grad = grad_output.data * power * np.power(a.data, power - 1)
+        return Tensor(grad), None
+
+class Mean(Function):
+    @staticmethod
+    def forward(ctx, a, dim=None, keepdim=False):
+        ctx.save_for_backwards(a)
+        ctx.save_data(dim=dim, keepdim=keepdim, input_shape=a.shape)
+        result = np.mean(a.data, axis=dim, keepdims=keepdim)
+        return Tensor(result, requires_grad=a.requires_grad)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, = ctx.saved_tensors
+        dim = ctx.saved_data['dim']
+        keepdim = ctx.saved_data['keepdim']
+        input_shape = ctx.saved_data['input_shape']
+        
+        # Calculate the number of elements that were averaged
+        if dim is None:
+            numel = np.prod(input_shape)
+        else:
+            if isinstance(dim, int):
+                numel = input_shape[dim]
+            else:
+                numel = np.prod([input_shape[d] for d in dim])
+        
+        # Expand gradient back to original shape
+        grad = grad_output.data / numel
+        if not keepdim and dim is not None:
+            grad = np.expand_dims(grad, axis=dim)
+        
+        # Broadcast to original shape
+        grad = np.broadcast_to(grad, input_shape)
+        return Tensor(grad)
+
+class Var(Function):
+    @staticmethod
+    def forward(ctx, a, dim=None, keepdim=False, unbiased=True):
+        ctx.save_for_backwards(a)
+        ctx.save_data(dim=dim, keepdim=keepdim, unbiased=unbiased)
+        
+        ddof = 1 if unbiased else 0
+        result = np.var(a.data, axis=dim, keepdims=keepdim, ddof=ddof)
+        return Tensor(result, requires_grad=a.requires_grad)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, = ctx.saved_tensors
+        dim = ctx.saved_data['dim']
+        keepdim = ctx.saved_data['keepdim']
+        unbiased = ctx.saved_data['unbiased']
+        
+        # Compute mean
+        mean_val = np.mean(a.data, axis=dim, keepdims=True)
+        
+        # Calculate N (number of elements)
+        if dim is None:
+            N = a.data.size
+        else:
+            if isinstance(dim, int):
+                N = a.shape[dim]
+            else:
+                N = np.prod([a.shape[d] for d in dim])
+        
+        if unbiased and N > 1:
+            N = N - 1
+        
+        # Gradient computation
+        diff = a.data - mean_val
+        grad = 2 * diff / N
+        
+        # Expand gradient dimensions if needed
+        if not keepdim and dim is not None:
+            grad_output_expanded = np.expand_dims(grad_output.data, axis=dim)
+        else:
+            grad_output_expanded = grad_output.data
+        
+        grad = grad * np.broadcast_to(grad_output_expanded, grad.shape)
+        return Tensor(grad)
+
+class Abs(Function):
+    @staticmethod  
+    def forward(ctx, a):
+        ctx.save_for_backwards(a)
+        result = np.abs(a.data)
+        return Tensor(result, requires_grad=a.requires_grad)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, = ctx.saved_tensors
+        grad = grad_output.data * np.sign(a.data)
+        return Tensor(grad)
+
+class Max(Function):
+    @staticmethod
+    def forward(ctx, a, dim=None, keepdim=False):
+        ctx.save_for_backwards(a)
+        ctx.save_data(dim=dim, keepdim=keepdim)
+        
+        if dim is None:
+            result = np.max(a.data)
+            ctx.save_data(max_indices=np.unravel_index(np.argmax(a.data), a.shape))
+        else:
+            result = np.max(a.data, axis=dim, keepdims=keepdim)
+            ctx.save_data(max_indices=np.argmax(a.data, axis=dim))
+        
+        return Tensor(result, requires_grad=a.requires_grad)
+    
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, = ctx.saved_tensors
+        dim = ctx.saved_data['dim']
+        keepdim = ctx.saved_data['keepdim']
+        max_indices = ctx.saved_data['max_indices']
+        
+        grad = np.zeros_like(a.data)
+        
+        if dim is None:
+            # Global max
+            grad[max_indices] = grad_output.data
+        else:
+            # Max along axis
+            if not keepdim:
+                grad_output_expanded = np.expand_dims(grad_output.data, axis=dim)
+            else:
+                grad_output_expanded = grad_output.data
+            
+            # Create indices for advanced indexing
+            indices = [slice(None)] * a.data.ndim
+            indices[dim] = max_indices
+            grad[tuple(indices)] = grad_output_expanded
+        
+        return Tensor(grad)
+
 class Sub(Function):
     @staticmethod
     def forward(ctx, a, b):
@@ -667,3 +814,23 @@ def extend_tensor_with_activations():
 
 # Add methods to Tensor
 extend_tensor_with_activations()
+
+def extend_tensor_with_missing_ops():
+    """Add missing operations to Tensor class"""
+    Tensor.exp = lambda self: Exp.apply(self)
+    Tensor.log = lambda self: Log.apply(self)
+    Tensor.pow = lambda self, power: Pow.apply(self, power)
+    Tensor.mean = lambda self, dim=None, keepdim=False: Mean.apply(self, dim, keepdim)
+    Tensor.var = lambda self, dim=None, keepdim=False, unbiased=True: Var.apply(self, dim, keepdim, unbiased)
+    Tensor.abs = lambda self: Abs.apply(self)
+    Tensor.max = lambda self, dim=None, keepdim=False: Max.apply(self, dim, keepdim)
+
+from julia.core.utils.op_registry import registry
+
+registry.register("Exp", Exp)
+registry.register("Log", Log) 
+registry.register("Pow", Pow)
+registry.register("Mean", Mean)
+registry.register("Var", Var)
+registry.register("Abs", Abs)
+registry.register("Max", Max)
