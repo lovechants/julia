@@ -7,32 +7,92 @@ from julia.core.tensor import Tensor
 
 #TODO More elegant way to do do data types
 class DataType(Enum):
-    FLOAT32 = "float32"
+    # Core types
+    FLOAT16 = "float16"
+    FLOAT32 = "float32" 
     FLOAT64 = "float64"
+    BFLOAT16 = "bfloat16"
+    
+    # Integer types
+    INT8 = "int8"
+    INT16 = "int16"
     INT32 = "int32"
     INT64 = "int64"
+    UINT8 = "uint8"
+    UINT16 = "uint16"
+    UINT32 = "uint32"
+    UINT64 = "uint64"
+    
+    # Special types
     BOOL = "bool"
+    COMPLEX64 = "complex64"
+    COMPLEX128 = "complex128"
     
     @staticmethod
-    def from_numpy(dtype):
+    def from_numpy(dtype) -> 'DataType':
+        """Enhanced numpy dtype mapping"""
         mapping = {
+            np.float16: DataType.FLOAT16,
             np.float32: DataType.FLOAT32,
             np.float64: DataType.FLOAT64,
+            np.int8: DataType.INT8,
+            np.int16: DataType.INT16,
             np.int32: DataType.INT32,
             np.int64: DataType.INT64,
-            np.bool_: DataType.BOOL
+            np.uint8: DataType.UINT8,
+            np.uint16: DataType.UINT16,
+            np.uint32: DataType.UINT32,
+            np.uint64: DataType.UINT64,
+            np.bool_: DataType.BOOL,
+            np.complex64: DataType.COMPLEX64,
+            np.complex128: DataType.COMPLEX128,
         }
-        return mapping.get(dtype, DataType.FLOAT32)
+        
+        # Handle string representations
+        if isinstance(dtype, str):
+            try:
+                return DataType(dtype)
+            except ValueError:
+                pass
+        
+        # Handle numpy dtype objects
+        dtype_type = dtype.type if hasattr(dtype, 'type') else type(dtype)
+        return mapping.get(dtype_type, DataType.FLOAT32)
     
     def to_numpy(self):
+        """Convert to numpy dtype"""
         mapping = {
+            DataType.FLOAT16: np.float16,
             DataType.FLOAT32: np.float32,
             DataType.FLOAT64: np.float64,
+            DataType.BFLOAT16: np.float32,  # Fallback for bfloat16
+            DataType.INT8: np.int8,
+            DataType.INT16: np.int16,
             DataType.INT32: np.int32,
             DataType.INT64: np.int64,
-            DataType.BOOL: np.bool_
+            DataType.UINT8: np.uint8,
+            DataType.UINT16: np.uint16,
+            DataType.UINT32: np.uint32,
+            DataType.UINT64: np.uint64,
+            DataType.BOOL: np.bool_,
+            DataType.COMPLEX64: np.complex64,
+            DataType.COMPLEX128: np.complex128,
         }
         return mapping[self]
+    
+    def size_bytes(self) -> int:
+        """Get size in bytes"""
+        sizes = {
+            DataType.FLOAT16: 2, DataType.BFLOAT16: 2,
+            DataType.FLOAT32: 4, DataType.FLOAT64: 8,
+            DataType.INT8: 1, DataType.UINT8: 1,
+            DataType.INT16: 2, DataType.UINT16: 2,
+            DataType.INT32: 4, DataType.UINT32: 4,
+            DataType.INT64: 8, DataType.UINT64: 8,
+            DataType.BOOL: 1,
+            DataType.COMPLEX64: 8, DataType.COMPLEX128: 16,
+        }
+        return sizes[self]
 
 class IRNode:
     """
@@ -361,4 +421,69 @@ class IRGraph:
 
 # TODO enhance the shape representation with more dynamic dimensions
 class Shape:
-    pass
+    """Enhanced shape representation with dynamic dimensions"""
+    
+    def __init__(self, dims: Union[Tuple[int, ...], list]):
+        self.dims = tuple(dims) if dims else ()
+        
+    def __getitem__(self, idx):
+        return self.dims[idx]
+    
+    def __len__(self):
+        return len(self.dims)
+    
+    def __iter__(self):
+        return iter(self.dims)
+    
+    def __eq__(self, other):
+        if isinstance(other, (tuple, list)):
+            return self.dims == tuple(other)
+        return self.dims == other.dims
+    
+    def __repr__(self):
+        return f"Shape{self.dims}"
+    
+    @property
+    def numel(self) -> int:
+        """Number of elements"""
+        if not self.dims:
+            return 1
+        result = 1
+        for dim in self.dims:
+            if dim < 0:  # Dynamic dimension
+                return -1
+            result *= dim
+        return result
+    
+    def is_compatible_with(self, other: 'Shape') -> bool:
+        """Check if shapes are compatible for broadcasting"""
+        try:
+            a = np.empty(self.dims)
+            b = np.empty(other.dims)
+            np.broadcast_arrays(a, b)
+            return True
+        except ValueError:
+            return False
+    
+    def broadcast_with(self, other: 'Shape') -> 'Shape':
+        """Get broadcast result shape"""
+        try:
+            a = np.empty(self.dims)
+            b = np.empty(other.dims)
+            result = np.broadcast_arrays(a, b)[0]
+            return Shape(result.shape)
+        except ValueError:
+            raise ValueError(f"Cannot broadcast shapes {self} and {other}")
+
+def infer_broadcast_shape(shapes: list) -> Optional[Shape]:
+    """Infer shape from multiple input shapes with broadcasting"""
+    if not shapes:
+        return None
+    
+    try:
+        # Create dummy arrays and use numpy's broadcasting
+        arrays = [np.empty(shape.dims if hasattr(shape, 'dims') else shape) for shape in shapes]
+        result = np.broadcast_arrays(*arrays)[0]
+        return Shape(result.shape)
+    except ValueError:
+        return None
