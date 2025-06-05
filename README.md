@@ -63,7 +63,11 @@ Optional
 - [ ] Remove numpy dependancy (Long term)
 
 
-## Current TODO 
+## Current TODO
+- [ ] Refactor conv2d im2col by vectorization
+- [ ] Fix backward profiling 
+- [ ] Memory pooling (finish)
+- [ ] Auto-registration system for operations
 - [x] Finish IR 
     - [ ] Fix test `shape_test::matmul`
     - [ ] Zig bindings -> and optimize function 

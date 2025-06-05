@@ -207,6 +207,6 @@ def test_cnn_profiling():
     
     print(f"CNN Loss: {loss.data:.4f}")
     print("CNN profiling completed.")
-    print_profiling_summary(2)
+    print_profiling_summary()
     
     assert(True)
