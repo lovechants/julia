@@ -65,6 +65,7 @@ Optional
 
 ## Current TODO
 - [ ] Refactor conv2d im2col by vectorization
+- [ ] Optimizer state management
 - [ ] Fix backward profiling 
 - [ ] Memory pooling (finish)
 - [ ] Auto-registration system for operations
