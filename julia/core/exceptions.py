@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from contextlib import contextmanager 
 from typing import Dict, List, Optional, Any, Union, Tuple, Callable
 
-
 class ErrorSeverity(Enum):
     """Error severity levels"""
     LOW = "low"
@@ -88,6 +87,10 @@ class JuliaError(Exception):
                 lines.append(f"  Batch Size: {self.context.batch_size}")
             if self.context.memory_usage:
                 lines.append(f"  Memory Usage: {self.context.memory_usage / 1024 / 1024:.2f} MB")
+            # Add custom context information
+            if self.context.custom_context:
+                for key, value in self.context.custom_context.items():
+                    lines.append(f"  {key.replace('_', ' ').title()}: {value}")
         
         if self.suggestion:
             lines.append(f"\nSuggestion: {self.suggestion}")
@@ -187,19 +190,30 @@ class ShapeError(TensorError):
             else:
                 suggestions.append(f"Consider using squeeze() or view() to reduce dimensions")
         
-        # Check if it's broadcastable
-        try:
-            import numpy as np
-            np.broadcast_shapes(expected, actual)
-            suggestions.append("Shapes are broadcastable - this might be an internal error")
-        except ValueError:
-            # Check for simple fixes
-            if len(expected) == len(actual):
-                for i, (e, a) in enumerate(zip(expected, actual)):
-                    if e != a and e == 1:
-                        suggestions.append(f"Try expanding dimension {i} of expected tensor")
-                    elif e != a and a == 1:
-                        suggestions.append(f"Try expanding dimension {i} of actual tensor")
+        # Check for simple fixes when same number of dimensions
+        if len(expected) == len(actual):
+            for i, (e, a) in enumerate(zip(expected, actual)):
+                if e != a and e == 1:
+                    suggestions.append(f"Try expanding dimension {i} of expected tensor")
+                elif e != a and a == 1:
+                    suggestions.append(f"Try expanding dimension {i} of actual tensor")
+        
+        # Check if it's broadcastable (only after checking for simple fixes)
+        if not suggestions:
+            try:
+                import numpy as np
+                np.broadcast_shapes(expected, actual)
+                suggestions.append("Shapes are broadcastable - this might be an internal error")
+            except (ValueError, AttributeError):
+                # np.broadcast_shapes might not exist in older numpy versions
+                try:
+                    # Fallback to creating arrays and broadcasting
+                    a = np.empty(expected)
+                    b = np.empty(actual)
+                    np.broadcast_arrays(a, b)
+                    suggestions.append("Shapes are broadcastable - this might be an internal error")
+                except ValueError:
+                    pass
         
         if not suggestions:
             suggestions.append("Use .reshape() or .view() to adjust tensor shape")
@@ -539,11 +553,12 @@ def error_context(operation: str = None, **context_kwargs):
         # Add context to existing Julia errors
         if operation and not e.context.operation:
             e.context.operation = operation
-        e.add_context(**context_kwargs)
+        # Add context kwargs to custom_context
+        e.context.custom_context.update(context_kwargs)
         raise
     except Exception as e:
         # Wrap other exceptions in JuliaError
-        context = ErrorContext(operation=operation, **context_kwargs)
+        context = ErrorContext(operation=operation, custom_context=context_kwargs)
         raise JuliaError(
             f"Unexpected error in {operation or 'operation'}: {str(e)}",
             context=context,

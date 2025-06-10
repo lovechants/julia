@@ -128,7 +128,7 @@ class TestTensorErrors:
     
     def test_shape_error_broadcast_suggestion(self):
         """Test ShapeError detects broadcastable shapes"""
-        # Create shapes that are broadcastable
+        # Create shapes that are NOT broadcastable but have dimension size differences
         error = ShapeError(
             "Addition failed", 
             expected_shape=(3, 1, 4),
@@ -136,7 +136,8 @@ class TestTensorErrors:
         )
         
         suggestion = error._generate_shape_suggestion((3, 1, 4), (3, 2, 4))
-        assert "expand" in suggestion.lower()
+        # Should suggest expanding the dimension with size 1
+        assert "expand" in suggestion.lower() or "expanding" in suggestion.lower()
     
     def test_dtype_error(self):
         """Test DTypeError functionality"""
@@ -582,9 +583,10 @@ class TestIntegrationScenarios:
                     raise ValueError("Deep error")
         
         error = exc_info.value
+        error_str = str(error)
         # Should capture context from both managers
-        assert "inner_op" in str(error)  # inner context overwrites outer operation
-        assert (3, 4) in str(error)  # tensor shapes should be in custom_context
+        assert "inner_op" in error_str  # inner context overwrites outer operation
+        assert "(3, 4)" in error_str  # tensor shapes should be in the error string
     
     def test_memory_error_with_context(self):
         """Test memory error with full context"""
