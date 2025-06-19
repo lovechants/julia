@@ -166,20 +166,18 @@ class Conv2DFunction(Function):
         
         # Im2col approach for faster computation
         def im2col(x, h_out, w_out):
-            n_samples, channels, h_in, w_in = x.shape
+            n, c, h, w = x.shape
+            col = np.ndarray((n * h_out * w_out, c * kernel_h * kernel_w), dtype=x.dtype)
             
-            # Initialize output matrix
-            col = np.zeros((n_samples, channels, kernel_h, kernel_w, h_out, w_out))
-            
-            # Fill the column matrix
-            for h in range(kernel_h):
-                h_max = h + stride_h * h_out
-                for w in range(kernel_w):
-                    w_max = w + stride_w * w_out
-                    col[:, :, h, w, :, :] = x[:, :, h:h_max:stride_h, w:w_max:stride_w]
+            for y in range(h_out):
+                y_start = y * stride_h
+                y_end = y_start + kernel_h
+                for x_pos in range(w_out):
+                    x_start = x_pos * stride_w
+                    x_end = x_start + kernel_w
                     
-            # Reshape to (n_samples * h_out * w_out, channels * kernel_h * kernel_w)
-            col = col.transpose(0, 4, 5, 1, 2, 3).reshape(n_samples * h_out * w_out, -1)
+                    patch = x[:, :, y_start:y_end, x_start:x_end]
+                    col[y * w_out + x_pos::h_out * w_out, :] = patch.reshape(n, -1)
             return col
         
         # Use im2col for convolution

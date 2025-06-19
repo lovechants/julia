@@ -1,4 +1,5 @@
-import numpy as np 
+import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 from julia.core.tensor import Tensor, Function, _ensure_tensor 
 from julia.core.nn.layers import Layer
 from typing import Tuple, Union, Dict, List
@@ -93,37 +94,34 @@ class Conv2D(Layer):
         else:
             self.bias = None
     
-    def _im2col(self, x_data, h_out, w_out):
+    def _im2col(self, x, kernel_size, stride, padding):
         """Convert image data to column format for convolution"""
-        n_samples, in_channels, h_in, w_in = x_data.shape
-        k_h, k_w = self.kernel_size
-        s_h, s_w = self.stride
-        p_h, p_w = self.padding
+        batch_size, channels, height, width = x.shape
+        kernel_h, kernel_w = kernel_size
+        stride_h, stride_w = stride
+        pad_h, pad_w = padding
         
-        # Pad input if needed
-        if p_h > 0 or p_w > 0:
-            x_padded = np.pad(
-                x_data, 
-                ((0, 0), (0, 0), (p_h, p_h), (p_w, p_w)), 
-                mode='constant'
-            )
+        # Pad input
+        if pad_h > 0 or pad_w > 0:
+            x_padded = np.pad(x, ((0, 0), (0, 0), (pad_h, pad_h), (pad_w, pad_w)))
         else:
-            x_padded = x_data
-            
-        # Initialize output matrix
-        col = np.zeros((n_samples, in_channels, k_h, k_w, h_out, w_out))
+            x_padded = x
         
-        # Fill the column matrix
-        for h in range(k_h):
-            h_max = h + s_h * h_out
-            for w in range(k_w):
-                w_max = w + s_w * w_out
-                col[:, :, h, w, :, :] = x_padded[:, :, h:h_max:s_h, w:w_max:s_w]
-                
-        # Reshape to (n_samples * h_out * w_out, in_channels * k_h * k_w)
-        col = col.transpose(0, 4, 5, 1, 2, 3).reshape(n_samples * h_out * w_out, -1)
+        # Calculate output size
+        out_h = (height + 2 * pad_h - kernel_h) // stride_h + 1
+        out_w = (width + 2 * pad_w - kernel_w) // stride_w + 1
+        
+        # Create sliding windows
+        windows = sliding_window_view(
+            x_padded, 
+            (kernel_h, kernel_w), 
+            axis=(2, 3)
+        )[:, :, ::stride_h, ::stride_w]
+        
+        # Reshape for matrix multiplication
+        col = windows.reshape(batch_size * out_h * out_w, channels * kernel_h * kernel_w)
         return col
-            
+
     def forward(self, x: Tensor) -> Tensor:
         from julia.core.ops_nn import Conv2DFunction 
         """Forward pass: apply 2D convolution"""
