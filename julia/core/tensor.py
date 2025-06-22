@@ -115,6 +115,16 @@ class Tensor:
     def __init__(self, data, requires_grad=False, device=None, dtype=None):
         self.id = str(uuid.uuid4())
         if isinstance(data, Tensor):
+            if dtype is None:
+                dtype = data.data.dtype
+            np_data = data.data.astype(dtype)
+        elif isinstance(data, np.ndarray):
+            if dtype is None:
+                dtype = data.dtype
+            np_data = data.astype(dtype)
+        else:
+            np_data = np.array(data, dtype=dtype)
+        if isinstance(data, Tensor):
             self.data = data.data
             self.requires_grad = requires_grad
             self.grad = None 
@@ -131,6 +141,17 @@ class Tensor:
             self._backward_node = None
 
         self.device = device or "cpu"
+        if self.device == "cpu":  # Only pool CPU tensors
+            try:
+                from julia.core.memory import device_manager
+                self.data = device_manager.allocate(np_data.shape, np_data.dtype, self.device)
+                self.data[:] = np_data
+                device_manager.get_pool(self.device).register_tensor_cleanup(self.id, self)
+            except Exception:
+                self.data = np_data.copy()  # Fallback
+        else:
+            self.data = np_data.copy()
+        
         self.shape = self.data.shape
 
         # For hooks 
@@ -141,6 +162,14 @@ class Tensor:
         self._next_hook_id = 0 
         # ^^^ Think about tensor bindings to be added for the compiled autograd engine 
 
+    def __del__(self):
+        if hasattr(self, 'data') and self.device == "cpu":
+            try:
+                from julia.core.memory import device_manager
+                device_manager.deallocate(self.data, self.device)
+            except:
+                pass
+    
     def zero_grad(self):
         self.grad = None
 
