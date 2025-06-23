@@ -1,5 +1,7 @@
 import numpy as np
 import uuid
+import inspect
+
 """
 Core Tensor class (with autograd)
 Inspired by Torch
@@ -316,10 +318,13 @@ class Tensor:
                         if not isinstance(grads_in, tuple):
                             grads_in = (grads_in, )
 
-                        # Validate gradient count
-                        if len(node.inputs) != len(grads_in):
-                            raise RuntimeError(f"Backwards function {node.fn_cls.__name__} returned {len(grads_in)} " 
-                                               f"gradients, forward took {len(node.inputs)} inputs")
+
+                        # Get the number of parameters the forward function expects (excluding ctx)
+                        forward_sig = inspect.signature(node.fn_cls.forward)
+                        expected_grads = len(forward_sig.parameters) - 1  # Exclude 'ctx' parameter
+
+                        if expected_grads != len(grads_in):
+                            raise RuntimeError(f"Backwards function {node.fn_cls.__name__} returned {len(grads_in)} gradients, forward function expects {expected_grads} gradients (excluding ctx)")
 
                         # Distribute gradients with profiling
                         with profiler.profile_operation(f"distribute_grads_{node.fn_cls.__name__}", "Backward"):
@@ -517,9 +522,34 @@ class Tensor:
     def sum(self):
         from julia.core.ops import Sum
         return Sum.apply(self)
+    
+    def __pow__(self, other):
+        from julia.core.ops import Pow
+        return Pow.apply(self, _ensure_tensor(other))
 
+    def __rpow__(self, other):
+        from julia.core.ops import Pow
+        return Pow.apply(_ensure_tensor(other), self)
+
+    def __rmul__(self, other):
+        from julia.core.ops import Mul
+        return Mul.apply(_ensure_tensor(other), self)
+
+    def __radd__(self, other):
+        from julia.core.ops import Add
+        return Add.apply(_ensure_tensor(other), self)
+
+    def __rsub__(self, other):
+        from julia.core.ops import Sub
+        return Sub.apply(_ensure_tensor(other), self)
+
+    def __rtruediv__(self, other):
+        from julia.core.ops import Div
+        return Div.apply(_ensure_tensor(other), self)
 
 def _ensure_tensor(data):
     if isinstance(data, Tensor):
         return data
+    if isinstance(data, (int, float)):
+        return Tensor(np.array(data, dtype=np.float32))
     return Tensor(data)
