@@ -53,12 +53,32 @@ class ScaledDotProductAttention(Function):
         # Apply mask if provided
         if mask is not None:
             mask_data = mask.data
-            # Broadcast mask to match scores shape
+            # Handle different mask shapes and broadcast to scores shape
             if mask_data.shape != scores_data.shape:
                 # Handle different mask shapes
-                if len(mask_data.shape) == 2:  # (seq_len, seq_len)
+                if len(mask_data.shape) == 2 and mask_data.shape[0] == mask_data.shape[1]:
+                    # Square mask (seq_len, seq_len) - likely causal mask
                     mask_data = mask_data[None, :, :]  # (1, seq_len, seq_len)
-                mask_data = np.broadcast_to(mask_data, scores_data.shape)
+                elif len(mask_data.shape) == 2 and mask_data.shape[0] != mask_data.shape[1]:
+                    # Padding mask (batch_size, seq_len) - need to expand for attention
+                    # Convert to (batch_size, 1, seq_len) then broadcast to (batch_size, seq_len, seq_len)
+                    mask_expanded = mask_data[:, None, :] | mask_data[:, :, None]
+                    mask_data = mask_expanded
+                elif len(mask_data.shape) == 3:
+                    # Already in (batch_size, seq_len, seq_len) format
+                    pass
+                
+                # Now broadcast to match scores shape (batch_size, seq_len_q, seq_len_k)
+                try:
+                    mask_data = np.broadcast_to(mask_data, scores_data.shape)
+                except ValueError:
+                    # If broadcasting fails, try to reshape appropriately
+                    if len(mask_data.shape) == 3 and mask_data.shape[0] == scores_data.shape[0]:
+                        # Mask is (batch_size, seq_len, seq_len), scores is (batch_size, seq_len, seq_len)
+                        mask_data = mask_data
+                    else:
+                        raise ValueError(f"Cannot broadcast mask shape {mask.data.shape} to scores shape {scores_data.shape}")
+            
             scores_data = scores_data + (mask_data * -1e9)
         
         # Apply softmax
@@ -166,10 +186,20 @@ class ScaledDotProductAttention(Function):
             # Apply mask gradient (masked positions should have zero gradient)
             if mask is not None:
                 mask_data = mask.data
-                if len(mask_data.shape) == 2:
+                # Handle different mask shapes for gradient computation
+                if len(mask_data.shape) == 2 and mask_data.shape[0] == mask_data.shape[1]:
+                    # Square mask (seq_len, seq_len)
                     mask_b = mask_data
+                elif len(mask_data.shape) == 2 and mask_data.shape[0] != mask_data.shape[1]:
+                    # Padding mask (batch_size, seq_len) -> expand to (seq_len, seq_len) for this batch
+                    batch_mask = mask_data[b]  # Get mask for current batch
+                    mask_b = batch_mask[:, None] | batch_mask[None, :]  # Expand to (seq_len, seq_len)
+                elif len(mask_data.shape) == 3:
+                    # Already in (batch_size, seq_len, seq_len) format
+                    mask_b = mask_data[b]
                 else:
-                    mask_b = mask_data.reshape(batch_size, q_shape[-2], k_shape[-2])[b]
+                    mask_b = np.zeros_like(grad_scores, dtype=bool)
+                
                 grad_scores = grad_scores * (1 - mask_b.astype(float))
             
             # Scale the gradient

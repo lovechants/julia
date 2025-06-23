@@ -292,38 +292,6 @@ def test_positional_encoding():
 
     assert True
 
-
-def test_attention_masks():
-    """Test attention mask utilities"""
-    
-    seq_len = 8
-    batch_size = 2
-    
-    # Test causal mask
-    print("Testing causal mask...")
-    causal_mask = create_causal_mask(seq_len)
-    print(f"Causal mask shape: {causal_mask.shape}")
-    print(f"Causal mask (first 4x4):")
-    print(causal_mask.data[:4, :4])
-    
-    # Test padding mask
-    print("\nTesting padding mask")
-    padding_lengths = [6, 4]
-    padding_mask = create_padding_mask(padding_lengths, seq_len)
-    print(f"Padding mask shape: {padding_mask.shape}")
-    print(f"Padding mask:")
-    print(padding_mask.data)
-    
-    # Test combined mask
-    print("\nTesting combined mask...")
-    combined_mask = create_attention_mask(causal=True, seq_len=seq_len, padding_lengths=padding_lengths)
-    print(f"Combined mask shape: {combined_mask.shape}")
-    print(f"Combined mask (batch 0, first 6x6):")
-    print(combined_mask.data[0, :6, :6])
-    
-    assert True
-
-
 def test_training_loop():
     """Test a simple training loop with attention"""
     
@@ -383,6 +351,45 @@ def test_training_loop():
     
     assert True
 
+def test_attention_masks():
+    """Test attention mask utilities"""
+
+    
+    seq_len = 8
+    batch_size = 2
+    
+    # Test causal mask
+    print("Testing causal mask")
+    causal_mask = create_causal_mask(seq_len)
+    print(f"Causal mask shape: {causal_mask.shape}")
+    print(f"Causal mask (first 4x4):")
+    print(causal_mask.data[:4, :4])
+    
+    # Test padding mask
+    print("\nTesting padding mask")
+    padding_lengths = [6, 4]
+    padding_mask = create_padding_mask(padding_lengths, seq_len)
+    print(f"Padding mask shape: {padding_mask.shape}")
+    print(f"Padding mask:")
+    print(padding_mask.data)
+    
+    # Test how padding mask should be expanded for attention
+    print(f"\nTesting padding mask expansion for attention")
+    # For attention, padding mask (batch_size, seq_len) needs to become (batch_size, seq_len, seq_len)
+    # where position (i,j) is masked if either token i or token j is padding
+    expanded_padding = padding_mask.data[:, None, :] | padding_mask.data[:, :, None]
+    print(f"Expanded padding mask shape: {expanded_padding.shape}")
+    print(f"Expanded padding mask (batch 0, first 6x6):")
+    print(expanded_padding[0, :6, :6])
+    
+    # Test combined mask
+    print("\nTesting combined mask")
+    combined_mask = create_attention_mask(causal=True, seq_len=seq_len, padding_lengths=padding_lengths)
+    print(f"Combined mask shape: {combined_mask.shape}")
+    print(f"Combined mask (batch 0, first 6x6):")
+    print(combined_mask.data[0, :6, :6])
+    
+    assert True
 
 def test_gradient_flow():
     
