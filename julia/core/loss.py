@@ -1215,7 +1215,7 @@ class MultiTaskLoss(LossFunction):
     def __call__(self, *losses) -> Tensor:
         return self.forward(*losses)
     
-    def forward(self, losses: List[Tensor]) -> Tensor:
+    def forward(self, *losses) -> Tensor:
         """
         Combine multiple task losses with uncertainty weighting
         
