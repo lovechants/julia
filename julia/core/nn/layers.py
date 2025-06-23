@@ -25,27 +25,23 @@ class Layer:
 
         def collect_params(module, current_params_set, current_modules_visited):
             module_id = id(module)
-            if module in current_modules_visited:
+            if module_id in current_modules_visited:
                 return
-            current_modules_visited.add(module)
+            current_modules_visited.add(module_id)
 
             # Check direct parameters
-            direct_params = getattr(module, '_parameters', {}).values()
-            for param in direct_params:
-                 if param is not None:
-                     current_params_set.add(param)
-                 else:
-                     print("     Found None in _parameters values")
+            if hasattr(module, '_parameters'):
+                direct_params = getattr(module, '_parameters', {}).values()
+                for param in direct_params:
+                    if param is not None:
+                        current_params_set.add(param)
 
             # Check submodules
-            print(f"     Module._modules keys: {list(getattr(module, '_modules', {}).keys())}")
-            if recurse:
-                submodules = getattr(module, '_modules', {}).values()
-                for submodule_name, submodule in getattr(module, '_modules', {}).items():
-                     if submodule is not None:
-                         collect_params(submodule, current_params_set, current_modules_visited)
-                     else:
-                         print(f"     Found None submodule for key '{submodule_name}'")
+            if recurse and hasattr(module, '_modules'):
+                submodules = getattr(module, '_modules', {})
+                for submodule_name, submodule in submodules.items():
+                    if submodule is not None:
+                        collect_params(submodule, current_params_set, current_modules_visited)
 
         collect_params(self, params_set, modules_visited)
         return list(params_set)
@@ -70,14 +66,17 @@ class Layer:
              return
 
         # Remove existing attribute from internal dicts first if replacing
-        if name in params: print(f"  Removing '{name}' from params"); del params[name]
-        if name in modules: print(f"  Removing '{name}' from modules"); del modules[name]
-        if name in buffers: print(f"  Removing '{name}' from buffers"); del buffers[name]
+        if name in params: 
+            del params[name]
+        if name in modules: 
+            del modules[name]
+        if name in buffers: 
+            del buffers[name]
 
         if isinstance(value, Tensor) and value.requires_grad:
             params[name] = value
         elif isinstance(value, Layer):
-            modules[name] = value # Add Layer instance to _modules dict
+            modules[name] = value
 
         super().__setattr__(name, value)
 
@@ -91,9 +90,7 @@ class Layer:
              if name in self._buffers: return self._buffers[name]
 
          # If not found, raise AttributeError (standard behavior)
-         # This prevents potential recursion if __dict__ access triggers __getattr__
          raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
 
     def __delattr__(self, name: str):
          # Remove from internal dicts if present
@@ -113,10 +110,6 @@ class Layer:
          # Also assign as regular attribute using super to avoid loops if __setattr__ is complex
          super().__setattr__(name, tensor)
 
-
-    
-
-
     def _register_module(self, name: str, module: Optional['Layer']):
          # Helper mainly for internal use if needed, __setattr__ handles most cases
          if module is None:
@@ -125,7 +118,6 @@ class Layer:
          if not isinstance(module, Layer):
              raise TypeError(f"Cannot register '{name}' - not a Layer")
          setattr(self, name, module)
-
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
