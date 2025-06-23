@@ -758,7 +758,7 @@ def mae_loss(y_pred: Tensor, y_true: Tensor, reduction: str = 'mean') -> Tensor:
 
 def huber_loss(y_pred: Tensor, y_true: Tensor, delta: float = 1.0, reduction: str = 'mean') -> Tensor:
     """Convenience wrapper for Huber Loss"""
-    return HuberLoss.apply(y_pred, y_true, reduction)
+    return HuberLoss.apply(y_pred, y_true, delta, reduction)
 
 def log_cosh_loss(y_pred: Tensor, y_true: Tensor, reduction: str = 'mean') -> Tensor:
     """Convenience wrapper for Log-Cosh Loss"""
@@ -1211,6 +1211,9 @@ class MultiTaskLoss(LossFunction):
         self.num_tasks = num_tasks
         # Initialize log variance parameters
         self.log_vars = [Tensor(np.array([0.0]), requires_grad=True) for _ in range(num_tasks)]
+
+    def __call__(self, *losses) -> Tensor:
+        return self.forward(*losses)
     
     def forward(self, losses: List[Tensor]) -> Tensor:
         """

@@ -1,5 +1,7 @@
 import numpy as np
 import uuid
+import inspect
+
 """
 Core Tensor class (with autograd)
 Inspired by Torch
@@ -115,16 +117,6 @@ class Tensor:
     def __init__(self, data, requires_grad=False, device=None, dtype=None):
         self.id = str(uuid.uuid4())
         if isinstance(data, Tensor):
-            if dtype is None:
-                dtype = data.data.dtype
-            np_data = data.data.astype(dtype)
-        elif isinstance(data, np.ndarray):
-            if dtype is None:
-                dtype = data.dtype
-            np_data = data.astype(dtype)
-        else:
-            np_data = np.array(data, dtype=dtype)
-        if isinstance(data, Tensor):
             self.data = data.data
             self.requires_grad = requires_grad
             self.grad = None 
@@ -141,17 +133,12 @@ class Tensor:
             self._backward_node = None
 
         self.device = device or "cpu"
-        if self.device == "cpu":  # Only pool CPU tensors
-            try:
-                from julia.core.memory import device_manager
-                self.data = device_manager.allocate(np_data.shape, np_data.dtype, self.device)
-                self.data[:] = np_data
-                device_manager.get_pool(self.device).register_tensor_cleanup(self.id, self)
-            except Exception:
-                self.data = np_data.copy()  # Fallback
-        else:
-            self.data = np_data.copy()
-        
+        try:
+            from julia.core.memory import try_allocate_raw_backed_array
+            self.data, self._raw_ptr, self._raw_size = try_allocate_raw_backed_array(self.data, self.device)
+        except:
+            self._raw_ptr, self._raw_size = None, 0
+
         self.shape = self.data.shape
 
         # For hooks 
@@ -163,12 +150,13 @@ class Tensor:
         # ^^^ Think about tensor bindings to be added for the compiled autograd engine 
 
     def __del__(self):
-        if hasattr(self, 'data') and self.device == "cpu":
-            try:
-                from julia.core.memory import device_manager
-                device_manager.deallocate(self.data, self.device)
-            except:
-                pass
+        # ONLY ADDITION: Clean up raw memory if used
+        try:
+            if hasattr(self, '_raw_ptr') and self._raw_ptr is not None:
+                from julia.core.memory import cleanup_raw_memory
+                cleanup_raw_memory(self._raw_ptr, self._raw_size)
+        except:
+            pass
     
     def zero_grad(self):
         self.grad = None
@@ -330,10 +318,13 @@ class Tensor:
                         if not isinstance(grads_in, tuple):
                             grads_in = (grads_in, )
 
-                        # Validate gradient count
-                        if len(node.inputs) != len(grads_in):
-                            raise RuntimeError(f"Backwards function {node.fn_cls.__name__} returned {len(grads_in)} " 
-                                               f"gradients, forward took {len(node.inputs)} inputs")
+
+                        # Get the number of parameters the forward function expects (excluding ctx)
+                        forward_sig = inspect.signature(node.fn_cls.forward)
+                        expected_grads = len(forward_sig.parameters) - 1  # Exclude 'ctx' parameter
+
+                        if expected_grads != len(grads_in):
+                            raise RuntimeError(f"Backwards function {node.fn_cls.__name__} returned {len(grads_in)} gradients, forward function expects {expected_grads} gradients (excluding ctx)")
 
                         # Distribute gradients with profiling
                         with profiler.profile_operation(f"distribute_grads_{node.fn_cls.__name__}", "Backward"):
@@ -531,9 +522,34 @@ class Tensor:
     def sum(self):
         from julia.core.ops import Sum
         return Sum.apply(self)
+    
+    def __pow__(self, other):
+        from julia.core.ops import Pow
+        return Pow.apply(self, _ensure_tensor(other))
 
+    def __rpow__(self, other):
+        from julia.core.ops import Pow
+        return Pow.apply(_ensure_tensor(other), self)
+
+    def __rmul__(self, other):
+        from julia.core.ops import Mul
+        return Mul.apply(_ensure_tensor(other), self)
+
+    def __radd__(self, other):
+        from julia.core.ops import Add
+        return Add.apply(_ensure_tensor(other), self)
+
+    def __rsub__(self, other):
+        from julia.core.ops import Sub
+        return Sub.apply(_ensure_tensor(other), self)
+
+    def __rtruediv__(self, other):
+        from julia.core.ops import Div
+        return Div.apply(_ensure_tensor(other), self)
 
 def _ensure_tensor(data):
     if isinstance(data, Tensor):
         return data
+    if isinstance(data, (int, float)):
+        return Tensor(np.array(data, dtype=np.float32))
     return Tensor(data)
