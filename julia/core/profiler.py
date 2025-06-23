@@ -339,11 +339,11 @@ class ModelProfiler:
                 reverse=True
             )[:10]
             
-            from julia.core.memory import get_memory_pool_info
-            pool_info = get_memory_pool_info()
-            print(f"  Memory Pool:")
-            print(f"    Hit Rate: {pool_info['pool_hit_rate']:.1f}%")
-            print(f"    Efficiency: {pool_info['pool_efficiency']:.1f}%")
+            # from julia.core.memory import get_memory_pool_info
+            # pool_info = get_memory_pool_info()
+            # print(f"  Memory Pool:")
+            # print(f"    Hit Rate: {pool_info['pool_hit_rate']:.1f}%")
+            # print(f"    Efficiency: {pool_info['pool_efficiency']:.1f}%")
 
             # Memory analysis
             memory_info = {
