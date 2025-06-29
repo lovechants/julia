@@ -148,6 +148,17 @@ class Tensor:
         self._backward_hooks = {} 
         self._next_hook_id = 0 
         # ^^^ Think about tensor bindings to be added for the compiled autograd engine 
+    
+    def __getitem__(self, key):
+        """Enable indexing for Tensor objects"""
+        return Tensor(self.data[key], requires_grad=self.requires_grad)
+
+    def __setitem__(self, key, value):
+        """Enable item assignment for Tensor objects"""
+        if isinstance(value, Tensor):
+            self.data[key] = value.data
+        else:
+            self.data[key] = value
 
     def __del__(self):
         # ONLY ADDITION: Clean up raw memory if used

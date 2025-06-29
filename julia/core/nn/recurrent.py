@@ -683,12 +683,14 @@ class LSTM(Layer):
         c_n_data = np.stack([c.data for c in cell_states], axis=0)
         h_n = Tensor(h_n_data, requires_grad=True)
         c_n = Tensor(c_n_data, requires_grad=True)
-        
-        import numpy as np
-from typing import Tuple, List, Optional, Union, Any
 
-from julia.core.tensor import Tensor, Function, _ensure_tensor
-from julia.core.layers import Layer
+        if self.batch_first:
+                # Convert (seq, batch, feature) to (batch, seq, feature)
+                output_data = output.data.transpose(1, 0, 2)
+                output = Tensor(output_data, requires_grad=output.requires_grad)
+            
+        return output, (h_n, c_n)
+        
 
 
 class RNNCell(Layer):
