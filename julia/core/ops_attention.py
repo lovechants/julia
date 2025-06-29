@@ -31,54 +31,90 @@ class ScaledDotProductAttention(Function):
         if scale is None:
             scale = 1.0 / np.sqrt(d_k)
         
-        # Compute attention scores: Q @ K^T
-        # Handle batch dimensions by reshaping to 3D for matmul
+        # Get shapes
         q_shape = query.shape
         k_shape = key.shape
         v_shape = value.shape
         
-        # Reshape to (batch_size, seq_len, d_k) for easier computation
-        batch_dims = q_shape[:-2]
-        batch_size = int(np.prod(batch_dims)) if batch_dims else 1
+        # For multi-head attention, the input is typically (batch_size, num_heads, seq_len, d_k)
+        # For regular attention, it's (batch_size, seq_len, d_k)
         
-        q_reshaped = query.data.reshape(batch_size, q_shape[-2], q_shape[-1])
-        k_reshaped = key.data.reshape(batch_size, k_shape[-2], k_shape[-1])
-        v_reshaped = value.data.reshape(batch_size, v_shape[-2], v_shape[-1])
+        if len(q_shape) == 4:
+            # Multi-head case: (batch_size, num_heads, seq_len, d_k)
+            batch_size, num_heads, seq_len_q, d_k = q_shape
+            _, _, seq_len_k, _ = k_shape
+            _, _, seq_len_v, d_v = v_shape
+            
+            # Reshape for batch matrix multiplication
+            # (batch_size, num_heads, seq_len, d_k) -> (batch_size * num_heads, seq_len, d_k)
+            q_reshaped = query.data.reshape(batch_size * num_heads, seq_len_q, d_k)
+            k_reshaped = key.data.reshape(batch_size * num_heads, seq_len_k, d_k)
+            v_reshaped = value.data.reshape(batch_size * num_heads, seq_len_v, d_v)
+            
+            effective_batch_size = batch_size * num_heads
+            
+        elif len(q_shape) == 3:
+            # Regular case: (batch_size, seq_len, d_k)
+            batch_size, seq_len_q, d_k = q_shape
+            _, seq_len_k, _ = k_shape
+            _, seq_len_v, d_v = v_shape
+            
+            q_reshaped = query.data
+            k_reshaped = key.data
+            v_reshaped = value.data
+            
+            effective_batch_size = batch_size
+            num_heads = 1
+            
+        else:
+            raise ValueError(f"Unsupported query shape: {q_shape}")
         
-        # Compute scores for each batch
-        scores_data = np.zeros((batch_size, q_shape[-2], k_shape[-2]))
-        for b in range(batch_size):
+        # Compute attention scores: Q @ K^T
+        scores_data = np.zeros((effective_batch_size, seq_len_q, seq_len_k))
+        for b in range(effective_batch_size):
             scores_data[b] = np.matmul(q_reshaped[b], k_reshaped[b].T) * scale
         
         # Apply mask if provided
         if mask is not None:
             mask_data = mask.data
+            
             # Handle different mask shapes and broadcast to scores shape
             if mask_data.shape != scores_data.shape:
-                # Handle different mask shapes
-                if len(mask_data.shape) == 2 and mask_data.shape[0] == mask_data.shape[1]:
-                    # Square mask (seq_len, seq_len) - likely causal mask
-                    mask_data = mask_data[None, :, :]  # (1, seq_len, seq_len)
-                elif len(mask_data.shape) == 2 and mask_data.shape[0] != mask_data.shape[1]:
-                    # Padding mask (batch_size, seq_len) - need to expand for attention
-                    # Convert to (batch_size, 1, seq_len) then broadcast to (batch_size, seq_len, seq_len)
-                    mask_expanded = mask_data[:, None, :] | mask_data[:, :, None]
-                    mask_data = mask_expanded
-                elif len(mask_data.shape) == 3:
-                    # Already in (batch_size, seq_len, seq_len) format
-                    pass
-                
-                # Now broadcast to match scores shape (batch_size, seq_len_q, seq_len_k)
-                try:
-                    mask_data = np.broadcast_to(mask_data, scores_data.shape)
-                except ValueError:
-                    # If broadcasting fails, try to reshape appropriately
-                    if len(mask_data.shape) == 3 and mask_data.shape[0] == scores_data.shape[0]:
-                        # Mask is (batch_size, seq_len, seq_len), scores is (batch_size, seq_len, seq_len)
-                        mask_data = mask_data
+                # For multi-head attention, we need to handle the mask correctly
+                if len(q_shape) == 4 and len(mask_data.shape) == 2:
+                    # Mask is (batch_size, seq_len) or (seq_len, seq_len)
+                    if mask_data.shape[0] == batch_size and mask_data.shape[1] == seq_len_q:
+                        # Padding mask: (batch_size, seq_len) -> expand for attention
+                        # Convert to (batch_size, 1, seq_len) then to (batch_size, seq_len, seq_len)
+                        mask_expanded = mask_data[:, None, :] | mask_data[:, :, None]
+                        # Repeat for each head: (batch_size, seq_len, seq_len) -> (batch_size * num_heads, seq_len, seq_len)
+                        mask_data = np.repeat(mask_expanded, num_heads, axis=0)
+                    elif mask_data.shape[0] == mask_data.shape[1] == seq_len_q:
+                        # Causal mask: (seq_len, seq_len) -> broadcast to all batches and heads
+                        mask_data = np.broadcast_to(mask_data[None, :, :], (effective_batch_size, seq_len_q, seq_len_k))
                     else:
-                        raise ValueError(f"Cannot broadcast mask shape {mask.data.shape} to scores shape {scores_data.shape}")
+                        raise ValueError(f"Cannot handle mask shape {mask_data.shape} with query shape {q_shape}")
+                        
+                elif len(q_shape) == 3 and len(mask_data.shape) == 2:
+                    # Regular attention case
+                    if mask_data.shape[0] == batch_size and mask_data.shape[1] == seq_len_q:
+                        # Padding mask: (batch_size, seq_len) -> (batch_size, seq_len, seq_len)
+                        mask_data = mask_data[:, None, :] | mask_data[:, :, None]
+                    elif mask_data.shape[0] == mask_data.shape[1] == seq_len_q:
+                        # Causal mask: (seq_len, seq_len) -> broadcast to all batches
+                        mask_data = np.broadcast_to(mask_data[None, :, :], (batch_size, seq_len_q, seq_len_k))
+                    else:
+                        raise ValueError(f"Cannot handle mask shape {mask_data.shape} with query shape {q_shape}")
+                        
+                elif len(mask_data.shape) == 3:
+                    # Mask is already in (batch_size, seq_len, seq_len) format
+                    if len(q_shape) == 4:
+                        # Need to repeat for each head
+                        mask_data = np.repeat(mask_data, num_heads, axis=0)
+                else:
+                    raise ValueError(f"Cannot handle mask shape {mask_data.shape} with query shape {q_shape}")
             
+            # Apply mask by adding large negative values to masked positions
             scores_data = scores_data + (mask_data * -1e9)
         
         # Apply softmax
@@ -94,16 +130,15 @@ class ScaledDotProductAttention(Function):
             attention_weights_data = attention_weights_data * dropout_mask / (1 - dropout_p)
         
         # Compute attention output: attention_weights @ V
-        output_data = np.zeros((batch_size, q_shape[-2], v_shape[-1]))
-        for b in range(batch_size):
+        output_data = np.zeros((effective_batch_size, seq_len_q, d_v))
+        for b in range(effective_batch_size):
             output_data[b] = np.matmul(attention_weights_data[b], v_reshaped[b])
         
-        # Reshape back to original batch dimensions
-        output_shape = q_shape[:-1] + (v_shape[-1],)
-        attention_shape = q_shape[:-1] + (k_shape[-2],)
-        
-        output_data = output_data.reshape(output_shape)
-        attention_weights_data = attention_weights_data.reshape(attention_shape)
+        # Reshape back to original format
+        if len(q_shape) == 4:
+            # Multi-head case: reshape back to (batch_size, num_heads, seq_len_q, d_v)
+            output_data = output_data.reshape(batch_size, num_heads, seq_len_q, d_v)
+            attention_weights_data = attention_weights_data.reshape(batch_size, num_heads, seq_len_q, seq_len_k)
         
         # Save for backward
         ctx.save_for_backwards(query, key, value)
@@ -150,23 +185,42 @@ class ScaledDotProductAttention(Function):
         
         grad_output = _ensure_tensor(grad_output)
         
-        # Reshape for computation
-        batch_dims = q_shape[:-2]
-        batch_size = int(np.prod(batch_dims)) if batch_dims else 1
-        
-        grad_out_reshaped = grad_output.data.reshape(batch_size, q_shape[-2], v_shape[-1])
-        attention_reshaped = attention_weights.reshape(batch_size, q_shape[-2], k_shape[-2])
-        
-        q_reshaped = query.data.reshape(batch_size, q_shape[-2], q_shape[-1])
-        k_reshaped = key.data.reshape(batch_size, k_shape[-2], k_shape[-1])
-        v_reshaped = value.data.reshape(batch_size, v_shape[-2], v_shape[-1])
+        # Handle reshaping for backward pass similar to forward
+        if len(q_shape) == 4:
+            batch_size, num_heads, seq_len_q, d_k = q_shape
+            _, _, seq_len_k, _ = k_shape
+            _, _, seq_len_v, d_v = v_shape
+            
+            effective_batch_size = batch_size * num_heads
+            
+            grad_out_reshaped = grad_output.data.reshape(effective_batch_size, seq_len_q, d_v)
+            attention_reshaped = attention_weights.reshape(effective_batch_size, seq_len_q, seq_len_k)
+            
+            q_reshaped = query.data.reshape(effective_batch_size, seq_len_q, d_k)
+            k_reshaped = key.data.reshape(effective_batch_size, seq_len_k, d_k)
+            v_reshaped = value.data.reshape(effective_batch_size, seq_len_v, d_v)
+            
+        elif len(q_shape) == 3:
+            batch_size, seq_len_q, d_k = q_shape
+            _, seq_len_k, _ = k_shape
+            _, seq_len_v, d_v = v_shape
+            
+            effective_batch_size = batch_size
+            num_heads = 1
+            
+            grad_out_reshaped = grad_output.data
+            attention_reshaped = attention_weights
+            
+            q_reshaped = query.data
+            k_reshaped = key.data
+            v_reshaped = value.data
         
         # Initialize gradients
         grad_query_data = np.zeros_like(q_reshaped)
         grad_key_data = np.zeros_like(k_reshaped)
         grad_value_data = np.zeros_like(v_reshaped)
         
-        for b in range(batch_size):
+        for b in range(effective_batch_size):
             # Gradient w.r.t. value: A^T @ grad_output
             grad_value_data[b] = np.matmul(attention_reshaped[b].T, grad_out_reshaped[b])
             
@@ -178,25 +232,31 @@ class ScaledDotProductAttention(Function):
                 grad_attention = grad_attention * dropout_mask[b] / (1 - dropout_p)
             
             # Gradient of softmax
-            # If S = softmax(X), then dS/dX = S * (dL/dS - sum(S * dL/dS, axis=-1, keepdims=True))
             attention_b = attention_reshaped[b]
             sum_term = np.sum(attention_b * grad_attention, axis=-1, keepdims=True)
             grad_scores = attention_b * (grad_attention - sum_term)
             
             # Apply mask gradient (masked positions should have zero gradient)
             if mask is not None:
+                # Handle mask for backward pass
                 mask_data = mask.data
-                # Handle different mask shapes for gradient computation
-                if len(mask_data.shape) == 2 and mask_data.shape[0] == mask_data.shape[1]:
-                    # Square mask (seq_len, seq_len)
-                    mask_b = mask_data
-                elif len(mask_data.shape) == 2 and mask_data.shape[0] != mask_data.shape[1]:
-                    # Padding mask (batch_size, seq_len) -> expand to (seq_len, seq_len) for this batch
-                    batch_mask = mask_data[b]  # Get mask for current batch
-                    mask_b = batch_mask[:, None] | batch_mask[None, :]  # Expand to (seq_len, seq_len)
-                elif len(mask_data.shape) == 3:
-                    # Already in (batch_size, seq_len, seq_len) format
-                    mask_b = mask_data[b]
+                if len(q_shape) == 4 and len(mask_data.shape) == 2:
+                    if mask_data.shape[0] == batch_size and mask_data.shape[1] == seq_len_q:
+                        # Padding mask case
+                        batch_idx = b // num_heads
+                        batch_mask = mask_data[batch_idx]
+                        mask_b = batch_mask[:, None] | batch_mask[None, :]
+                    elif mask_data.shape[0] == mask_data.shape[1] == seq_len_q:
+                        # Causal mask case
+                        mask_b = mask_data
+                    else:
+                        mask_b = np.zeros_like(grad_scores, dtype=bool)
+                elif len(q_shape) == 3 and len(mask_data.shape) == 2:
+                    if mask_data.shape[0] == batch_size and mask_data.shape[1] == seq_len_q:
+                        batch_mask = mask_data[b]
+                        mask_b = batch_mask[:, None] | batch_mask[None, :]
+                    else:
+                        mask_b = mask_data
                 else:
                     mask_b = np.zeros_like(grad_scores, dtype=bool)
                 
@@ -212,9 +272,14 @@ class ScaledDotProductAttention(Function):
             grad_key_data[b] = np.matmul(grad_scores.T, q_reshaped[b])
         
         # Reshape back to original shapes
-        grad_query = Tensor(grad_query_data.reshape(q_shape)) if query.requires_grad else None
-        grad_key = Tensor(grad_key_data.reshape(k_shape)) if key.requires_grad else None
-        grad_value = Tensor(grad_value_data.reshape(v_shape)) if value.requires_grad else None
+        if len(q_shape) == 4:
+            grad_query_data = grad_query_data.reshape(q_shape)
+            grad_key_data = grad_key_data.reshape(k_shape)
+            grad_value_data = grad_value_data.reshape(v_shape)
+        
+        grad_query = Tensor(grad_query_data) if query.requires_grad else None
+        grad_key = Tensor(grad_key_data) if key.requires_grad else None
+        grad_value = Tensor(grad_value_data) if value.requires_grad else None
         
         return grad_query, grad_key, grad_value, None, None, None, None
 
