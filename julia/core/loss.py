@@ -259,36 +259,83 @@ class LogCoshLoss(Function):
     - More robust than MSE, smoother than Huber
     """
     
-    @staticmethod
+    # @staticmethod
+    # def forward(ctx, y_pred, y_true, reduction='mean'):
+    #     y_pred = _ensure_tensor(y_pred)
+    #     y_true = _ensure_tensor(y_true)
+    #
+    #     ctx.save_for_backwards(y_pred, y_true)
+    #     ctx.save_data(reduction=reduction)
+    #
+    #     diff = y_pred.data - y_true.data
+    #     loss = np.log(np.cosh(diff))
+    #
+    #     if reduction == 'mean':
+    #         loss = np.mean(loss)
+    #     elif reduction == 'sum':
+    #         loss = np.sum(loss)
+    #
+    #     return Tensor(loss, requires_grad=y_pred.requires_grad)
+    #
+    # @staticmethod
+    # def backward(ctx, grad_output):
+    #     y_pred, y_true = ctx.saved_tensors
+    #     reduction = ctx.saved_data['reduction']
+    #
+    #     diff = y_pred.data - y_true.data
+    #     grad_pred = np.tanh(diff)
+    #
+    #     if reduction == 'mean':
+    #         grad_pred = grad_pred / np.prod(diff.shape)
+    #
+    #     grad_pred_tensor = Tensor(grad_output.data * grad_pred)
+    #     return grad_pred_tensor, None, None
+    @staticmethod 
     def forward(ctx, y_pred, y_true, reduction='mean'):
-        y_pred = _ensure_tensor(y_pred)
-        y_true = _ensure_tensor(y_true)
+            y_pred = _ensure_tensor(y_pred)
+            y_true = _ensure_tensor(y_true)
+            
+            ctx.save_for_backwards(y_pred, y_true)
+            ctx.save_data(reduction=reduction)
+            
+            diff = y_pred.data - y_true.data
+            
+            # Fix: Add numerical stability for large values
+            abs_diff = np.abs(diff)
+            # For large values, log(cosh(x)) ≈ |x| - log(2)
+            # Use this approximation when |diff| > 10 to avoid overflow
+            mask = abs_diff > 10
+            
+            loss = np.zeros_like(diff)
+            loss[~mask] = np.log(np.cosh(diff[~mask]))
+            loss[mask] = abs_diff[mask] - np.log(2)
+            
+            if reduction == 'mean':
+                loss = np.mean(loss)
+            elif reduction == 'sum':
+                loss = np.sum(loss)
+            
+            return Tensor(loss, requires_grad=y_pred.requires_grad)
         
-        ctx.save_for_backwards(y_pred, y_true)
-        ctx.save_data(reduction=reduction)
-        
-        diff = y_pred.data - y_true.data
-        loss = np.log(np.cosh(diff))
-        
-        if reduction == 'mean':
-            loss = np.mean(loss)
-        elif reduction == 'sum':
-            loss = np.sum(loss)
-        
-        return Tensor(loss, requires_grad=y_pred.requires_grad)
-    
     @staticmethod
     def backward(ctx, grad_output):
         y_pred, y_true = ctx.saved_tensors
         reduction = ctx.saved_data['reduction']
         
         diff = y_pred.data - y_true.data
-        grad_pred = np.tanh(diff)
+        
+        # Fix: Add numerical stability for gradient
+        abs_diff = np.abs(diff)
+        mask = abs_diff > 10
+        
+        grad = np.zeros_like(diff)
+        grad[~mask] = np.tanh(diff[~mask])
+        grad[mask] = np.sign(diff[mask])  # Gradient of |x| for large values
         
         if reduction == 'mean':
-            grad_pred = grad_pred / np.prod(diff.shape)
+            grad = grad / np.prod(diff.shape)
         
-        grad_pred_tensor = Tensor(grad_output.data * grad_pred)
+        grad_pred_tensor = Tensor(grad_output.data * grad)
         return grad_pred_tensor, None, None
 
 

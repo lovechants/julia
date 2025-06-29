@@ -168,14 +168,24 @@ class Pow(Function):
     def forward(ctx, a, power):
         ctx.save_for_backwards(a)
         ctx.save_data(power=power)
-        result = np.power(a.data, power)
+        # Fix: Handle power as scalar or tensor properly
+        if isinstance(power, Tensor):
+            power_val = power.data
+        else:
+            power_val = power
+        result = np.power(a.data, power_val)
         return Tensor(result, requires_grad=a.requires_grad)
     
     @staticmethod
     def backward(ctx, grad_output):
         a, = ctx.saved_tensors
         power = ctx.saved_data['power']
-        grad = grad_output.data * power * np.power(a.data, power - 1)
+        if isinstance(power, Tensor):
+            power_val = power.data
+        else:
+            power_val = power
+            
+        grad = grad_output.data * power_val * np.power(a.data, power_val - 1)
         return Tensor(grad), None
 
 class Mean(Function):

@@ -522,14 +522,22 @@ class Tensor:
     def sum(self):
         from julia.core.ops import Sum
         return Sum.apply(self)
-    
+
     def __pow__(self, other):
+        if isinstance(other, (int, float)):
+            power = other
+        else:
+            power = _ensure_tensor(other)
         from julia.core.ops import Pow
-        return Pow.apply(self, _ensure_tensor(other))
+        return Pow.apply(self, power)
 
     def __rpow__(self, other):
+        if isinstance(other, (int, float)):
+            base = Tensor(np.array(other, dtype=np.float32))
+        else:
+            base = _ensure_tensor(other)
         from julia.core.ops import Pow
-        return Pow.apply(_ensure_tensor(other), self)
+        return Pow.apply(base, self)
 
     def __rmul__(self, other):
         from julia.core.ops import Mul
@@ -547,9 +555,99 @@ class Tensor:
         from julia.core.ops import Div
         return Div.apply(_ensure_tensor(other), self)
 
+    # Tensor dimension functions 
+    def flatten(self, start_dim=0, end_dim=-1):
+        """
+        Flatten tensor dimensions
+        
+        Args:
+            start_dim: First dimension to flatten (inclusive)
+            end_dim: Last dimension to flatten (inclusive)
+        
+        Returns:
+            Flattened tensor
+        """
+        if end_dim < 0:
+            end_dim = len(self.shape) + end_dim
+        
+        new_shape = list(self.shape)
+        
+        if start_dim == end_dim:
+            return self
+        
+        flat_size = 1
+        for i in range(start_dim, end_dim + 1):
+            flat_size *= new_shape[i]
+        
+        final_shape = new_shape[:start_dim] + [flat_size] + new_shape[end_dim + 1:]
+        
+        return self.reshape(final_shape)
+
+    def squeeze(self, dim=None):
+        """
+        Remove single-dimensional entries from tensor shape
+        
+        Args:
+            dim: Dimension to squeeze. If None, squeeze all dimensions of size 1
+        
+        Returns:
+            Squeezed tensor
+        """
+        if dim is None:
+            # Remove all dimensions of size 1
+            new_shape = [s for s in self.shape if s != 1]
+        else:
+            # Remove specific dimension if it has size 1
+            if dim < 0:
+                dim = len(self.shape) + dim
+            
+            if self.shape[dim] != 1:
+                raise ValueError(f"Cannot squeeze dimension {dim} with size {self.shape[dim]}")
+            
+            new_shape = list(self.shape)
+            new_shape.pop(dim)
+        
+        if not new_shape:  # If all dimensions were squeezed, result is scalar
+            new_shape = []
+        
+        return self.reshape(new_shape)
+
+    def unsqueeze(self, dim):
+        """
+        Add a dimension of size 1 at the specified position
+        
+        Args:
+            dim: Position to insert the new dimension
+        
+        Returns:
+            Tensor with added dimension
+        """
+        new_shape = list(self.shape)
+        
+        if dim < 0:
+            dim = len(new_shape) + dim + 1
+        
+        new_shape.insert(dim, 1)
+        return self.reshape(new_shape)
+
 def _ensure_tensor(data):
     if isinstance(data, Tensor):
         return data
     if isinstance(data, (int, float)):
-        return Tensor(np.array(data, dtype=np.float32))
+        tensor = object.__new__(Tensor)
+        tensor.id = str(uuid.uuid4())
+        tensor.data = np.array(data, dtype=np.float32)
+        tensor.requires_grad = False
+        tensor.grad = None
+        tensor._backward_node = None
+        tensor.device = "cpu"
+        tensor._raw_ptr, tensor._raw_size = None, 0
+        tensor.shape = tensor.data.shape
+        tensor._is_leaf = True
+        tensor._retain_grad = False
+        tensor._grad_fn = None
+        tensor._backward_hooks = {}
+        tensor._next_hook_id = 0
+        return tensor
+    
     return Tensor(data)
