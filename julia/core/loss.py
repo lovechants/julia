@@ -57,7 +57,23 @@ class CustomLossTemplate(LossFunction):
             loss = some_custom_function(diff)
             return self._apply_reduction(loss)
     """
+    def __init__(self, reduction='mean'):
+        assert reduction in ['none', 'mean', 'sum'], f"Invalid reduction: {reduction}"
+        self.reduction = reduction
     
+    def __call__(self, y_pred: Tensor, y_true: Tensor) -> Tensor:
+        """Apply the loss function"""
+        return self.forward(y_pred, y_true)
+    
+    def _apply_reduction(self, loss: Tensor) -> Tensor:
+        """Apply the specified reduction to the loss tensor"""
+        if self.reduction == 'none':
+            return loss
+        elif self.reduction == 'mean':
+            return Tensor(np.array([np.mean(loss.data)]))  # Ensure scalar tensor
+        elif self.reduction == 'sum':
+            return Tensor(np.array([np.sum(loss.data)]))   # Ensure scalar tensor
+
     def forward(self, y_pred: Tensor, y_true: Tensor) -> Tensor:
         """
         Implement your custom loss function here
@@ -105,6 +121,8 @@ class MSELoss(Function):
             loss = np.mean(loss)
         elif reduction == 'sum':
             loss = np.sum(loss)
+        elif reduction == 'none':
+            pass 
         
         return Tensor(loss, requires_grad=y_pred.requires_grad)
     
@@ -119,10 +137,14 @@ class MSELoss(Function):
             grad_pred = 2.0 * diff / np.prod(diff.shape)
         elif reduction == 'sum':
             grad_pred = 2.0 * diff
-        else:  # 'none'
+        else:  
             grad_pred = 2.0 * diff
         
-        grad_pred_tensor = Tensor(grad_output.data * grad_pred)
+        if grad_output.data.shape == ():
+            grad_pred_tensor = Tensor(grad_output.data * grad_pred)
+        else:
+            grad_pred_tensor = Tensor(grad_output.data * grad_pred)
+        
         return grad_pred_tensor, None, None
 
 
@@ -1245,34 +1267,26 @@ class VariationalLoss(CustomLossTemplate):
         return self._apply_reduction(total_loss)
 
 
-class MultiTaskLoss(LossFunction):
-    """
-    Multi-task loss combiner with automatic weighting
-    
-    Combines multiple losses with learnable weights based on:
-    "Multi-Task Learning Using Uncertainty to Weigh Losses for Scene Geometry and Semantics"
-    """
+class MultiTaskLoss:
+    """Fixed Multi-task loss combiner"""
     
     def __init__(self, num_tasks: int, reduction='mean'):
-        super().__init__(reduction)
         self.num_tasks = num_tasks
+        self.reduction = reduction
         # Initialize log variance parameters
         self.log_vars = [Tensor(np.array([0.0]), requires_grad=True) for _ in range(num_tasks)]
 
-    def __call__(self, *losses) -> Tensor:
-        return self.forward(*losses)
+    def __call__(self, losses: List[Tensor]) -> Tensor:
+        return self.forward(losses)
     
     def forward(self, losses: List[Tensor]) -> Tensor:
         """
         Combine multiple task losses with uncertainty weighting
-        
-        Args:
-            losses: List of individual task losses
-            
-        Returns:
-            Combined weighted loss
         """
-        total_loss = Tensor(np.array(0.0))
+        if len(losses) != self.num_tasks:
+            raise ValueError(f"Expected {self.num_tasks} losses, got {len(losses)}")
+        
+        total_loss = Tensor(np.array([0.0]))  # Start with proper scalar tensor
         
         for i, (loss, log_var) in enumerate(zip(losses, self.log_vars)):
             # Uncertainty weighting: L_total = Σ (1/(2σ²)) * L_i + log(σ²)
