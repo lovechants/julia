@@ -94,7 +94,7 @@ class ModelProfiler:
         return cls._instance
     
     def __init__(self, enabled: bool = True, memory_tracking: bool = True, 
-                 flop_counting: bool = True, max_events: int = 10000):
+                 flop_counting: bool = True, max_events: int = 10000, enable_aliyah: bool = True):
         # Prevent re-initialization of singleton
         if hasattr(self, '_initialized'):
             return
@@ -128,7 +128,24 @@ class ModelProfiler:
         self.total_forward_time = 0.0
         self.total_backward_time = 0.0
         
+        # Vis through aliyah 
+        self.enable_aliyah = enable_aliyah
+        self.aliyah_monitor = None 
+        self._training_step = 0 
+        self._current_epoch = 0 
+
+        if self.enable_aliyah:
+            self._init_aliyah()
+        
         self._initialized = True
+
+    def _init_aliyah(self):
+        try:
+            import aliyah 
+            self.aliyah_monitor = aliyah.trainingmonitor()
+        except ImportError:
+            print("Aliyah not abailable for TUI visualization, install with pip install aliyah or disable visualization tracking")
+            self.enable_aliyah = False
     
     def enable(self):
         """Enable profiling"""
