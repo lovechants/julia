@@ -5,7 +5,11 @@ Skeleton development environment for BearAI machine learning and stats library
 
 All associated papers + derivations included (where applicable)
 
-Educational ML/DL framework built from scratch 
+Educational ML/DL framework built from scratch
+
+Accessible Machine Learning
+
+A living framework that evolves with current ML breakthroughs
 
 ---
 
@@ -17,6 +21,9 @@ Educational ML/DL framework built from scratch
     - CUDA
     - Metal
     - Clang 
+    - Triton
+    - Triton + Native Julia Tensors
+    - No PyTorch Dependecy
 - Onnx Support 
 - Terminal vis support through [Aliyah](https://github.com/lovechants/Aliyah/tree/main)
 
@@ -58,19 +65,20 @@ Optional
 - [ ] More optimization passes 
 - [ ] Model quantization 
 - [ ] Full model zoo 
-- [ ] In depth summary 
+- [X] Full in depth summary
 - [ ] Rust or zig autograd engine (Long term)
 - [ ] Remove numpy dependancy (Long term)
+- [ ] Meta-Learning WASM UX (Long term)
 
 
 ## Current TODO
-- [ ] Refactor conv2d im2col by vectorization
+- [X] Refactor conv2d im2col by vectorization
 - [ ] Optimizer state management
-- [ ] Fix backward profiling 
-- [ ] Memory pooling (finish)
-- [ ] Auto-registration system for operations
+- [X] Fix backward profiling 
+- [X] Memory pooling (finish)
+- [X] Auto-registration system for operations
 - [x] Finish IR 
-    - [ ] Fix test `shape_test::matmul`
+    - [X] Fix test `shape_test::matmul`
     - [ ] Zig bindings -> and optimize function 
 - [x] Finish LLVM -> Actually optimize it  
 - [ ] Fix CLANG setup
@@ -85,8 +93,8 @@ Optional
     - [ ] TPU/NPU?
     - [ ] x86
 - [ ] Pure NN primitives  
-    - [ ] Recurrent autograd 
-    - [ ] Attention blocks
+    - [X] Recurrent autograd 
+    - [X] Attention blocks
     - [ ] RL components
     - [x] Optimizers 
         - [x] Muon 
@@ -101,6 +109,6 @@ Optional
     - [ ] Easy Vis + Metric tracking 
     - [x] Profiler
 - [ ] Model Zoo + Stats
-- [ ] Datasets
+- [X] Datasets
 - [ ] Benchmarking util
 - [ ] Testing suite util
