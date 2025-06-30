@@ -11,9 +11,6 @@ class ExecutionMode(Enum):
     TRAINING = "training"
 
 class AutogradEngine:
-    """
-    Singleton autograd engine that manages computation graphs and gradient computation
-    """
     _instance = None
     _lock = threading.Lock()
     
@@ -30,47 +27,24 @@ class AutogradEngine:
         
         self.mode = ExecutionMode.TRAINING
         self.enabled = True
-        
-        # Graph state
-        self._ready_nodes: deque = deque()
-        self._not_ready_nodes: Dict[int, BackwardNode] = {}
-        self._dependencies: Dict[int, Set[int]] = defaultdict(set)
-        
-        # Memory optimization
-        self._tensor_versions: Dict[int, int] = {}
-        self._node_pool: List[BackwardNode] = []
-        self._max_pool_size = 1000
-        
         self._initialized = True
     
     def set_mode(self, mode: ExecutionMode):
-        """Set execution mode"""
         self.mode = mode
     
     def is_training(self) -> bool:
         return self.mode == ExecutionMode.TRAINING and self.enabled
     
     def no_grad(self):
-        """Context manager to disable gradient computation"""
         return NoGradContext()
     
     def enable_grad(self):
-        """Context manager to enable gradient computation"""
         return EnableGradContext()
     
     def backward(self, root_tensor, gradient=None, retain_graph=False, create_graph=False):
-        """
-        Optimized backward pass with topological sorting and memory management
-        """
         if not self.is_training() or not root_tensor.requires_grad:
             return
         
-        # Clear previous state
-        self._ready_nodes.clear()
-        self._not_ready_nodes.clear()
-        self._dependencies.clear()
-        
-        # Initialize gradient
         if gradient is None:
             if root_tensor.shape == () or root_tensor.shape == (1,):
                 gradient = np.ones_like(root_tensor.data)
@@ -81,102 +55,114 @@ class AutogradEngine:
         else:
             gradient = np.asarray(gradient)
         
-        # Set up initial gradient
-        root_tensor._set_grad(gradient, create_graph)
+        topo_order = self._build_topological_order(root_tensor)
+        gradients = {id(root_tensor): gradient}
+        for node in reversed(topo_order):
+            self._execute_node_backward(node, gradients, create_graph)
         
-        # Build computation graph
-        if root_tensor._backward_node:
-            self._build_graph(root_tensor._backward_node)
+        self._assign_leaf_gradients(topo_order, gradients, create_graph)
         
-        # Execute backward pass
-        self._execute_backward(create_graph)
-        
-        # Cleanup if not retaining graph
         if not retain_graph:
             self._cleanup_graph(root_tensor)
     
-    def _build_graph(self, root_node: 'BackwardNode'):
-        """Build computation graph with dependency tracking"""
+    def _build_topological_order(self, root_tensor):
+
         visited = set()
+        topo_order = []
         
-        def visit(node):
-            if not node or id(node) in visited:
+        def visit(tensor):
+            if not isinstance(tensor, Tensor) or id(tensor) in visited:
                 return
             
-            visited.add(id(node))
-            dependencies = set()
+            visited.add(id(tensor))
             
-            for input_tensor in node.inputs:
-                if isinstance(input_tensor, Tensor) and input_tensor._backward_node:
-                    child_node = input_tensor._backward_node
-                    dependencies.add(id(child_node))
-                    visit(child_node)
+            if hasattr(tensor, '_backward_node') and tensor._backward_node is not None:
+                node = tensor._backward_node
+                for input_tensor in node.inputs:
+                    if isinstance(input_tensor, Tensor):
+                        visit(input_tensor)
             
-            self._dependencies[id(node)] = dependencies
-            
-            # If no dependencies, node is ready
-            if not dependencies:
-                self._ready_nodes.append(node)
-            else:
-                self._not_ready_nodes[id(node)] = node
+            topo_order.append(tensor)
         
-        visit(root_node)
+        visit(root_tensor)
+        return topo_order
     
-    def _execute_backward(self, create_graph: bool):
-        """Execute backward pass using topological ordering"""
-        while self._ready_nodes:
-            node = self._ready_nodes.popleft()
+    def _execute_node_backward(self, tensor, gradients, create_graph):
+        if not isinstance(tensor, Tensor) or not hasattr(tensor, '_backward_node'):
+            return
+        
+        node = tensor._backward_node
+        if node is None:
+            return
+        
+        tensor_id = id(tensor)
+        if tensor_id not in gradients:
+            return
+        
+        grad_output = gradients[tensor_id]
+        
+        try:
+            from julia.core.tensor import Tensor as TensorClass
+            grad_tensor = TensorClass(grad_output, requires_grad=create_graph)
             
-            # Find output tensor and its gradient
-            output_tensor = None
-            output_grad = None
+            input_grads = node.fn_cls.backward(node.ctx, grad_tensor)
             
-            for input_tensor in node.inputs:
-                if (isinstance(input_tensor, Tensor) and 
-                    hasattr(input_tensor, '_backward_node') and 
-                    input_tensor._backward_node is node):
-                    # This is wrong - we need to find tensors that have this node as their backward_node
-                    pass
+            if not isinstance(input_grads, tuple):
+                input_grads = (input_grads,)
             
-            # Find the tensor that owns this backward node
-            for input_tensor in node.inputs:
-                if isinstance(input_tensor, Tensor):
-                    # We need a different approach to find the output tensor
-                    # For now, assume single output per node
-                    if hasattr(input_tensor, '_node_output_tensor'):
-                        output_tensor = input_tensor._node_output_tensor
-                        output_grad = output_tensor.grad
-                        break
+            if len(input_grads) != len(node.inputs):
+                raise RuntimeError(
+                    f"Backward function {node.fn_cls.__name__} returned {len(input_grads)} "
+                    f"gradients but forward pass had {len(node.inputs)} inputs"
+                )
             
-            if output_grad is None:
+            for input_tensor, input_grad in zip(node.inputs, input_grads):
+                if isinstance(input_tensor, TensorClass) and input_tensor.requires_grad and input_grad is not None:
+                    input_id = id(input_tensor)
+                    grad_data = input_grad.data if hasattr(input_grad, 'data') else input_grad
+                    
+                    if input_id in gradients:
+                        gradients[input_id] = gradients[input_id] + grad_data
+                    else:
+                        gradients[input_id] = grad_data.copy()
+        
+        except Exception as e:
+            print(f"Error in backward pass for {node.fn_cls.__name__}: {e}")
+            # Continue with other nodes rather than crashing
+    
+    def _assign_leaf_gradients(self, topo_order, gradients, create_graph):
+
+        from julia.core.tensor import Tensor as TensorClass
+        
+        for tensor in topo_order:
+            if not isinstance(tensor, TensorClass) or not tensor.requires_grad:
                 continue
             
-            # Execute backward function
-            try:
-                gradients = node.fn_cls.backward(node.ctx, output_grad)
-                if not isinstance(gradients, tuple):
-                    gradients = (gradients,)
-                
-                # Distribute gradients to inputs
-                for input_tensor, grad in zip(node.inputs, gradients):
-                    if isinstance(input_tensor, Tensor) and input_tensor.requires_grad and grad is not None:
-                        input_tensor._accumulate_grad(grad, create_graph)
-                
-            except Exception as e:
-                print(f"Error in backward pass for {node.fn_cls.__name__}: {e}")
+            tensor_id = id(tensor)
+            if tensor_id not in gradients:
                 continue
             
-            # Update dependencies and check for newly ready nodes
-            node_id = id(node)
-            for other_id, other_node in list(self._not_ready_nodes.items()):
-                if node_id in self._dependencies[other_id]:
-                    self._dependencies[other_id].remove(node_id)
-                    if not self._dependencies[other_id]:
-                        self._ready_nodes.append(other_node)
-                        del self._not_ready_nodes[other_id]
+            # Only assign gradients to leaf tensors or tensors that retain gradients
+            should_retain = (getattr(tensor, '_is_leaf', True) or 
+                           getattr(tensor, '_retain_grad', False))
+            
+            if should_retain:
+                grad_data = gradients[tensor_id]
+                
+                if tensor.grad is None:
+                    tensor.grad = TensorClass(grad_data.copy(), requires_grad=create_graph)
+                else:
+                    if create_graph and not tensor.grad.requires_grad:
+                        # Need to recreate grad tensor with requires_grad=True
+                        tensor.grad = TensorClass(
+                            tensor.grad.data + grad_data, 
+                            requires_grad=True
+                        )
+                    else:
+                        tensor.grad.data = tensor.grad.data + grad_data
     
     def _cleanup_graph(self, root_tensor):
-        """Clean up computation graph to free memory"""
+
         visited = set()
         
         def cleanup_recursive(tensor):
@@ -185,34 +171,39 @@ class AutogradEngine:
             
             visited.add(id(tensor))
             
-            if tensor._backward_node:
-                for input_tensor in tensor._backward_node.inputs:
+            if hasattr(tensor, '_backward_node') and tensor._backward_node is not None:
+                node = tensor._backward_node
+                
+                # Recursively cleanup input tensors
+                for input_tensor in node.inputs:
                     if isinstance(input_tensor, Tensor):
                         cleanup_recursive(input_tensor)
-                
-                # Return node to pool if possible
-                if len(self._node_pool) < self._max_pool_size:
-                    tensor._backward_node.reset()
-                    self._node_pool.append(tensor._backward_node)
                 
                 tensor._backward_node = None
         
         cleanup_recursive(root_tensor)
 
 class BackwardNode:
-    """Optimized backward node with memory pooling"""
-    
     def __init__(self, fn_cls=None, ctx=None, inputs=None):
         self.fn_cls = fn_cls
         self.ctx = ctx
         self.inputs = inputs or []
-        self.id = id(self)
+        
+        # Use weak references to prevent circular references
+        self.input_refs = []
+        for inp in self.inputs:
+            if isinstance(inp, Tensor):
+                self.input_refs.append(weakref.ref(inp))
+            else:
+                self.input_refs.append(lambda: inp)  # Non-tensor inputs
     
-    def reset(self):
-        """Reset node for reuse in memory pool"""
-        self.fn_cls = None
-        self.ctx = None
-        self.inputs.clear()
+    def get_inputs(self):
+        inputs = []
+        for ref in self.input_refs:
+            obj = ref()
+            if obj is not None:
+                inputs.append(obj)
+        return inputs
 
 class NoGradContext:
     """Context manager to disable gradient computation"""
@@ -246,21 +237,21 @@ class EnableGradContext:
         engine = AutogradEngine()
         engine.enabled = self.prev_enabled
 
-# Global autograd engine instance
 _engine = AutogradEngine()
 
 def no_grad():
-    """Disable gradient computation"""
     return _engine.no_grad()
 
 def enable_grad():
-    """Enable gradient computation"""
     return _engine.enable_grad()
 
 def set_grad_enabled(enabled: bool):
-    """Set gradient computation state"""
     _engine.enabled = enabled
 
 def is_grad_enabled() -> bool:
-    """Check if gradient computation is enabled"""
     return _engine.enabled
+
+def Tensor(*args, **kwargs):
+    """Import Tensor class when needed to avoid circular imports"""
+    from julia.core.tensor import Tensor as TensorClass
+    return TensorClass(*args, **kwargs)

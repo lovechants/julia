@@ -1,3 +1,4 @@
+import weakref
 import numpy as np
 import uuid
 import inspect
@@ -8,15 +9,29 @@ Inspired by Torch
 """
 
 class Context:
+    """
+    Fixed Context class with proper memory management
+    """
     def __init__(self):
         self.saved_tensors = ()
         self.saved_data = {}
+        self._tensor_refs = []  # Keep strong references
 
     def save_for_backwards(self, *tensors):
         self.saved_tensors = tensors
+        # Keep strong references to prevent garbage collection
+        self._tensor_refs = [t for t in tensors if isinstance(t, Tensor)]
 
     def save_data(self, **kwargs):
         self.saved_data.update(kwargs)
+    
+    def __del__(self):
+        try:
+            self._tensor_refs.clear()
+            self.saved_tensors = ()
+            self.saved_data.clear()
+        except Exception:
+            pass
 
 
 class Function:
@@ -88,6 +103,7 @@ class BackwardNode:
         self.fn_cls = fn_cls
         self.ctx = ctx
         self.inputs = inputs
+        self.input_refs = []
         self.next_functions = []
         self.grad_outputs = {}
         self.grad_output_count = 0 
@@ -95,6 +111,9 @@ class BackwardNode:
         for inp in inputs:
             if isinstance(inp, Tensor) and inp.requires_grad and inp._backward_node:
                 self.next_functions.append(inp._backward_node)
+                self.input_refs.append(weakref.ref(inp))
+            else:
+                self.input_refs.append(None)
 
     def accmulate_grad(self, grad, idx=0):
         """
@@ -112,6 +131,13 @@ class BackwardNode:
         if self.num_expect_grads is not None and self.grad_output_count >=self.num_expect_grads:
             return True 
         return False
+
+    def cleanup(self):
+        """MEMORY LEAK FIX: Explicitly break reference cycles"""
+        self.inputs.clear()
+        self.input_refs.clear()
+        self.ctx = None
+        self.fn_cls = None
 
 class Tensor:
     def __init__(self, data, requires_grad=False, device=None, dtype=None):
@@ -161,14 +187,28 @@ class Tensor:
             self.data[key] = value
 
     def __del__(self):
-        # ONLY ADDITION: Clean up raw memory if used
         try:
             if hasattr(self, '_raw_ptr') and self._raw_ptr is not None:
                 from julia.core.memory import cleanup_raw_memory
                 cleanup_raw_memory(self._raw_ptr, self._raw_size)
-        except:
+                self._raw_ptr = None
+                self._raw_size = 0
+        except Exception:
+            # Ignore cleanup errors during destruction
             pass
     
+    def _cleanup_autograd(self):
+        if self._backward_node is not None:
+            # Clean up the backward node
+            self._backward_node.cleanup()
+            self._backward_node = None
+        
+        # Clear gradient
+        if self.grad is not None:
+            if hasattr(self.grad, '_cleanup_autograd'):
+                self.grad._cleanup_autograd()
+            self.grad = None
+
     def zero_grad(self):
         self.grad = None
 
@@ -230,17 +270,14 @@ class Tensor:
         """
         if not self.requires_grad:
             return 
-
-        # Import profiler
+        
         from julia.core.profiler import profiler
         import time
 
-        # Start overall backward timing
         backward_start_time = time.perf_counter()
         
         with profiler.profile_operation("autograd_backward_full", "Backward"):
             
-            # Build computation graph with profiling
             with profiler.profile_operation("build_computation_graph", "Backward"):
                 visited_nodes = set()
                 topo_order_nodes = []
@@ -256,7 +293,6 @@ class Tensor:
                 if self._backward_node:
                     build_topo(self._backward_node)
 
-            # Initialize gradient with profiling
             with profiler.profile_operation("initialize_gradients", "Backward"):
                 if gradient is None: 
                     if self.shape == () or self.shape == (1,):
@@ -270,7 +306,6 @@ class Tensor:
 
                 grads_tensor_keyed = {self: gradient_data}
 
-                # Assign initial gradient to self.grad 
                 if self.grad is None:
                     self.grad = Tensor(gradient_data.copy(), requires_grad=create_graph)
                 else:
@@ -279,14 +314,12 @@ class Tensor:
                     else:
                         self.grad.data += gradient_data
 
-            # Main backward loop with detailed profiling
             total_backward_ops = len(topo_order_nodes)
             
             with profiler.profile_operation(f"backward_propagation_{total_backward_ops}_ops", "Backward"):
                 
                 for i, node in enumerate(reversed(topo_order_nodes)):
                     
-                    # Find output tensor and gradient for this node
                     output_tensor = None 
                     output_grad_data = None 
                     for t, grad_d in grads_tensor_keyed.items():
@@ -306,7 +339,6 @@ class Tensor:
                         
                         grad_out_tensor = Tensor(output_grad_data, requires_grad=create_graph)
                         
-                        # Apply backward hooks with profiling
                         if hasattr(output_tensor, '_backward_hooks') and output_tensor._backward_hooks:
                             with profiler.profile_operation(f"backward_hooks_{node.fn_cls.__name__}", "Backward"):
                                 for hook in output_tensor._backward_hooks.values():
@@ -316,12 +348,10 @@ class Tensor:
                                             raise TypeError(f"Hook returned invalid type: {type(hook_result)}")
                                         grad_out_tensor = hook_result
 
-                        # Execute the actual backward function
                         backward_func_start = time.perf_counter()
                         grads_in = node.fn_cls.backward(node.ctx, grad_out_tensor)
                         backward_func_time = time.perf_counter() - backward_func_start
                         
-                        # Record timing in custom metrics
                         if hasattr(profiler, 'operation_history') and profiler.operation_history:
                             last_op = profiler.operation_history[-1]
                             last_op.custom_metrics['backward_func_time'] = backward_func_time
@@ -330,7 +360,6 @@ class Tensor:
                             grads_in = (grads_in, )
 
 
-                        # Get the number of parameters the forward function expects (excluding ctx)
                         forward_sig = inspect.signature(node.fn_cls.forward)
                         expected_grads = len(forward_sig.parameters) - 1  # Exclude 'ctx' parameter
 
@@ -365,11 +394,9 @@ class Tensor:
                 if not retain_graph:
                     self._backward_node = None 
 
-        # Record total backward time
         total_backward_time = time.perf_counter() - backward_start_time
         profiler.total_backward_time += total_backward_time
         
-        # Update profiler stats
         if hasattr(profiler, 'operation_history') and profiler.operation_history:
             # Find the most recent autograd_backward_full operation and update its metrics
             for op in reversed(profiler.operation_history):
