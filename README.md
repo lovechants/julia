@@ -1,7 +1,7 @@
 ## Machine Learning + Stats Library 
 
 ---
-Skeleton development environment for BearAI machine learning and stats library
+Baylor ECS - BearAI
 
 All associated papers + derivations included (where applicable)
 
