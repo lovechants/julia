@@ -22,8 +22,7 @@ A living framework that evolves with current ML breakthroughs
     - Metal
     - Clang 
     - Triton
-    - Triton + Native Julia Tensors
-    - No PyTorch Dependecy
+    - Triton + Native Julia Tensors without PyTorch dependancy
 - Onnx Support 
 - Terminal vis support through [Aliyah](https://github.com/lovechants/Aliyah/tree/main)
 
