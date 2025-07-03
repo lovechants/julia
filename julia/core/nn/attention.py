@@ -1,5 +1,5 @@
 import numpy as np 
-from julia.core.tensor import Tensor, Function, _ensure_tensor 
+from julia.core.tensor import Tensor 
 from julia.core.nn.layers import Layer, Linear
 from typing import Optional, Tuple
 import math
@@ -131,8 +131,8 @@ class GroupedQueryAttention(Layer):
     
     def __init__(self, d_model: int, num_query_heads: int = 32, num_kv_heads: int = 8, dropout: float = 0.1):
         super().__init__()
-        assert d_model % num_query_heads == 0, f"d_model must be divisible by num_query_heads"
-        assert num_query_heads % num_kv_heads == 0, f"num_query_heads must be divisible by num_kv_heads"
+        assert d_model % num_query_heads == 0, "d_model must be divisible by num_query_heads"
+        assert num_query_heads % num_kv_heads == 0, "num_query_heads must be divisible by num_kv_heads"
         
         self.d_model = d_model
         self.num_query_heads = num_query_heads

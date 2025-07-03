@@ -1,6 +1,6 @@
-from julia.core.tensor import Tensor, _ensure_tensor, Function
+from julia.core.tensor import Tensor, _ensure_tensor
 from julia.core.nn.layers import Layer
-from typing import List, Dict, Union, Optional, Any, Tuple
+from typing import Optional, Tuple
 import numpy as np 
 
 class RNN(Layer):

@@ -1,6 +1,5 @@
 import numpy as np
-from typing import Dict, List, Tuple, Any, Optional, Union
-import io
+from typing import Any
 
 try:
     import onnx
@@ -10,7 +9,7 @@ except ImportError:
     ONNX_AVAILABLE = False
     print("Warning: onnx not found. ONNX import/export will not be available.")
 
-from julia.core.ir import IRGraph, IRNode, DataType, ConstantNode, VariableNode, PlaceholderNode
+from julia.core.ir import IRGraph, IRNode, DataType, ConstantNode
 
 class ONNXImporter:
     """

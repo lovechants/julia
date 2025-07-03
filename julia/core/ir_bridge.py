@@ -1,7 +1,7 @@
 import numpy as np
-from typing import Dict, List, Optional, Union, Tuple, Any
-from julia.core.ir import IRGraph, IRNode, DataType, ConstantNode, VariableNode, PlaceholderNode
-from julia.core.tensor import Tensor, Function
+from typing import Dict, List, Union
+from julia.core.ir import IRGraph, IRNode, DataType
+from julia.core.tensor import Tensor
 
 class TensorToIR:
     """

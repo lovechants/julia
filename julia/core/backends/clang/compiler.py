@@ -1,7 +1,7 @@
 import os 
 import ctypes
 import numpy as np 
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any
 
 try:
     import clang.cindex as cl 
@@ -11,7 +11,7 @@ except ImportError:
     CLANG_AVAILABLE = False
     print("clang not avaibable")
 
-from julia.core.ir import IRGraph, IRNode, DataType
+from julia.core.ir import IRGraph, DataType
 
 # TODO the actual C conversion.. actually make it compile 
 
@@ -107,7 +107,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {size});\n"
                     c_code += f"    for (int i = 0; i < {size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = {input1}[i] + {input2}[i];\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
                 else:
                     # Multi-dimensional array addition
                     total_size = np.prod(node.shape)
@@ -116,7 +116,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {total_size});\n"
                     c_code += f"    for (int i = 0; i < {total_size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = {input1}[i] + {input2}[i];\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
             
             elif node.op_type == "Mul":
                 input1 = variable_map[node.inputs[0].id]
@@ -130,7 +130,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {size});\n"
                     c_code += f"    for (int i = 0; i < {size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = {input1}[i] * {input2}[i];\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
                 else:
                     # Multi-dimensional array multiplication
                     total_size = np.prod(node.shape)
@@ -139,7 +139,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {total_size});\n"
                     c_code += f"    for (int i = 0; i < {total_size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = {input1}[i] * {input2}[i];\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
             
             elif node.op_type == "MatMul":
                 input1 = variable_map[node.inputs[0].id]
@@ -160,9 +160,9 @@ class ClangCompiler:
                     c_code += f"        for (int j = 0; j < {n}; j++) {{\n"
                     c_code += f"            for (int k = 0; k < {k}; k++) {{\n"
                     c_code += f"                {var_name}[i * {n} + j] += {input1}[i * {k} + k] * {input2}[k * {n} + j];\n"
-                    c_code += f"            }}\n"
-                    c_code += f"        }}\n"
-                    c_code += f"    }}\n"
+                    c_code += "            }\n"
+                    c_code += "        }\n"
+                    c_code += "    }\n"
                 elif len(node.inputs[0].shape) == 1 and len(node.inputs[1].shape) == 1:
                     # Vector-vector dot product
                     k = node.inputs[0].shape[0]
@@ -172,7 +172,7 @@ class ClangCompiler:
                     c_code += f"    {var_name}[0] = 0;\n"
                     c_code += f"    for (int i = 0; i < {k}; i++) {{\n"
                     c_code += f"        {var_name}[0] += {input1}[i] * {input2}[i];\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
                 else:
                     # Add other matrix multiplication cases as needed
                     raise NotImplementedError(f"Unsupported shapes for MatMul: {node.inputs[0].shape} and {node.inputs[1].shape}")
@@ -188,7 +188,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {size});\n"
                     c_code += f"    for (int i = 0; i < {size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = {input1}[i] > 0 ? {input1}[i] : 0;\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
                 else:
                     # Multi-dimensional array ReLU
                     total_size = np.prod(node.shape)
@@ -197,7 +197,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {total_size});\n"
                     c_code += f"    for (int i = 0; i < {total_size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = {input1}[i] > 0 ? {input1}[i] : 0;\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
             
             elif node.op_type == "Sigmoid":
                 input1 = variable_map[node.inputs[0].id]
@@ -210,7 +210,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {size});\n"
                     c_code += f"    for (int i = 0; i < {size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = 1.0 / (1.0 + exp(-{input1}[i]));\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
                 else:
                     # Multi-dimensional array Sigmoid
                     total_size = np.prod(node.shape)
@@ -219,7 +219,7 @@ class ClangCompiler:
                     c_code += f"    {c_type}* {var_name} = ({c_type}*)malloc(sizeof({c_type}) * {total_size});\n"
                     c_code += f"    for (int i = 0; i < {total_size}; i++) {{\n"
                     c_code += f"        {var_name}[i] = 1.0 / (1.0 + exp(-{input1}[i]));\n"
-                    c_code += f"    }}\n"
+                    c_code += "    }\n"
                     
             
             variable_map[node.id] = var_name

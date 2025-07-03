@@ -1,6 +1,5 @@
 import numpy as np
-from julia.core.tensor import Function, Tensor, Context, _ensure_tensor
-from typing import Optional, Tuple
+from julia.core.tensor import Function, Tensor, _ensure_tensor
 
 class ScaledDotProductAttention(Function):
     """

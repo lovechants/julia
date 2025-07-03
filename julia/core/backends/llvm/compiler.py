@@ -1,6 +1,5 @@
-import os
 import ctypes
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Tuple, Any
 import numpy as np
 
 try:
@@ -11,7 +10,7 @@ except ImportError:
     LLVM_AVAILABLE = False
     print("Warning: llvmlite not found. LLVM compilation will not be available.")
 
-from julia.core.ir import IRGraph, IRNode, DataType
+from julia.core.ir import IRGraph, DataType
 
 class LLVMCompiler:
     """

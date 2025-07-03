@@ -1,9 +1,8 @@
 import numpy as np 
 import weakref
-from typing import Dict, Optional, Set, Tuple, List 
+from typing import Dict, Optional, Tuple, List 
 from threading import Lock, RLock
 import ctypes
-import gc
 import atexit
 
 class MemoryPool:

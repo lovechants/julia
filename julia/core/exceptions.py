@@ -2,7 +2,6 @@
 Custom exceptions
 """
 import traceback
-import sys 
 import numpy as np 
 import threading 
 import time 
@@ -10,7 +9,7 @@ import warnings
 from enum import Enum
 from dataclasses import dataclass, field 
 from contextlib import contextmanager 
-from typing import Dict, List, Optional, Any, Union, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple, Callable
 
 class ErrorSeverity(Enum):
     """Error severity levels"""
@@ -186,9 +185,9 @@ class ShapeError(TensorError):
         # Check if it's a dimension mismatch
         if len(expected) != len(actual):
             if len(actual) < len(expected):
-                suggestions.append(f"Consider using unsqueeze() to add dimensions")
+                suggestions.append("Consider using unsqueeze() to add dimensions")
             else:
-                suggestions.append(f"Consider using squeeze() or view() to reduce dimensions")
+                suggestions.append("Consider using squeeze() or view() to reduce dimensions")
         
         # Check for simple fixes when same number of dimensions
         if len(expected) == len(actual):
@@ -442,7 +441,7 @@ class PerformanceWarning(UserWarning):
 def validate_tensor_shape(tensor, expected_shape, operation_name="operation"):
     """Validate tensor has expected shape with enhanced error reporting"""
     if not hasattr(tensor, 'shape'):
-        raise TensorError(f"Object is not a tensor", operation=operation_name)
+        raise TensorError("Object is not a tensor", operation=operation_name)
     
     if tensor.shape != expected_shape:
         raise ShapeError(
@@ -456,7 +455,7 @@ def validate_tensor_shape(tensor, expected_shape, operation_name="operation"):
 def validate_tensor_dtype(tensor, expected_dtype, operation_name="operation"):
     """Validate tensor has expected dtype"""
     if not hasattr(tensor, 'dtype'):
-        raise TensorError(f"Object is not a tensor", operation=operation_name)
+        raise TensorError("Object is not a tensor", operation=operation_name)
     
     actual_dtype = getattr(tensor, 'dtype', None)
     if actual_dtype != expected_dtype:
@@ -471,7 +470,7 @@ def validate_tensor_dtype(tensor, expected_dtype, operation_name="operation"):
 def validate_tensor_device(tensor, expected_device, operation_name="operation"):
     """Validate tensor is on expected device"""
     if not hasattr(tensor, 'device'):
-        raise TensorError(f"Object is not a tensor", operation=operation_name)
+        raise TensorError("Object is not a tensor", operation=operation_name)
     
     actual_device = getattr(tensor, 'device', 'unknown')
     if actual_device != expected_device:
@@ -486,7 +485,7 @@ def validate_tensor_device(tensor, expected_device, operation_name="operation"):
 def validate_gradient_enabled(tensor, operation_name="operation"):
     """Validate tensor has gradients enabled"""
     if not hasattr(tensor, 'requires_grad'):
-        raise TensorError(f"Object is not a tensor", operation=operation_name)
+        raise TensorError("Object is not a tensor", operation=operation_name)
     
     if not tensor.requires_grad:
         raise GradientError(

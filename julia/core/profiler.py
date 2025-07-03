@@ -3,12 +3,10 @@ import threading
 import json
 import numpy as np
 from dataclasses import dataclass, field
-from collections import defaultdict, deque
-from typing import Dict, List, Optional, Any, ContextManager, Callable, Union, Tuple
+from collections import deque
+from typing import Dict, List, Optional, Any, Callable, Tuple
 from contextlib import contextmanager
 import functools
-import weakref
-import gc
 import psutil
 import os
 

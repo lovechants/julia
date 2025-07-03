@@ -4,9 +4,8 @@ from julia.core.tensor import Tensor
 """
 Learning Rate Schedulers
 """
-import json 
 from abc import ABC, abstractmethod 
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List
 import pickle
 
 class LRScheduler(ABC):

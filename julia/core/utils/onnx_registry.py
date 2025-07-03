@@ -2,7 +2,7 @@
 ONNX Conversion Registry for Operation Mapping -> just going to have to continue reading the ONNX documentation and messing with it for a better solution. 
 This is just a more focused registry for ONNX its really similar to `op_registry.py`
 """
-from typing import Dict, Callable, Optional, Any, List, Tuple, Union
+from typing import Dict, Callable, Optional
 import numpy as np
 
 try:
@@ -12,7 +12,6 @@ try:
 except ImportError:
     ONNX_AVAILABLE = False
 
-from julia.core.ir import IRNode
 
 
 class ONNXConversionRegistry:

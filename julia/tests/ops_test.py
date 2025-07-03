@@ -1,6 +1,7 @@
 from ..core.tensor import Tensor
 from ..core.optim import SGD
-import numpy as np 
+import numpy as np
+
 
 def test_add_mul():
     x = Tensor([2.0], requires_grad=True)
@@ -10,6 +11,7 @@ def test_add_mul():
     print("z:", z.data)
     print("dz/dx (should be y):", x.grad.data)
     print("dz/dy (should be x + 1):", y.grad.data)
+
 
 def test_linear_regression():
     # y = 2x + 3
@@ -35,12 +37,14 @@ def test_linear_regression():
     print("Learned W:", W.data.flatten())
     print("Learned b:", b.data.flatten())
 
+
 def test_sigmoid():
     x = Tensor([-1.0, 0.0, 1.0], requires_grad=True)
     s = x.sigmoid()
     s.backward(Tensor(np.ones_like(s.data)))
     print("Sigmoid:", s.data)
     print("Sigmoid grad:", x.grad.data)
+
 
 if __name__ == "__main__":
     test_add_mul()

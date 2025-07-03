@@ -1,6 +1,6 @@
 import numpy as np 
-from typing import List, Dict, Optional, Any, Callable, Union, Tuple
-from julia.core.tensor import Function, Tensor
+from typing import List, Callable
+from julia.core.tensor import Tensor
 
 """
 Why JVP or VJP 

@@ -1,6 +1,6 @@
 import numpy as np
-from typing import Optional, Callable, Union, Tuple, List
-from julia.core.tensor import Tensor, Function, Context, _ensure_tensor
+from typing import List
+from julia.core.tensor import Tensor, Function, _ensure_tensor
 
 
 class LossFunction:

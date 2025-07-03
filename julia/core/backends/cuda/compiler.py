@@ -1,7 +1,4 @@
-import os 
-import numpy as np 
-from typing import Dict, List, Tuple, Any, Optional
-import pkg_resources
+from typing import Any
 
 # TODO test in lab | linux or windows 
 try: 
@@ -14,7 +11,6 @@ except ImportError:
     CUDA_AVAILABLE = False
     print("Warning: CUDA not available")
 
-from julia.core.ir import IRGraph, IRNode, DataType
 
 class PTXKernelRunner:
     """

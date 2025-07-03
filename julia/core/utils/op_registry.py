@@ -2,8 +2,7 @@
 Registration system so operations can register themselves 
 For IR -> ONNX seperate  
 """
-from typing import Dict, Callable, Type, Any, Optional, List, Tuple
-import inspect
+from typing import Dict, Callable, Type, Optional, List, Tuple
 
 class OpRegistry:
     """

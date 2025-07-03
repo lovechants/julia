@@ -10,7 +10,6 @@ from julia.core.tensor import Tensor, Function
 from julia.core.nn.layers import Layer, Linear
 from julia.core.loss import mse_loss
 from julia.core.optim import Adam
-import math
 
 class BSplineFunction(Function):
     """B-spline basis function for learnable univariate functions"""

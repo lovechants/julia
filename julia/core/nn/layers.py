@@ -1,7 +1,6 @@
-from julia.core import tensor
 import numpy as np 
-from julia.core.tensor import Tensor, Function, _ensure_tensor 
-from typing import Tuple, List, Optional, Union, Callable, Any
+from julia.core.tensor import Tensor, _ensure_tensor 
+from typing import List, Optional, Union, Any
 
 class Layer:
     def __init__(self):
@@ -234,7 +233,6 @@ class Dropout(Layer):
         self.inplace = inplace
 
     def forward(self, x: Tensor) -> Tensor:
-        from julia.core.ops import Dropout,Add
         """ Applying dropout """
         x = _ensure_tensor(x)
         return x.dropout(self.p, self.training)

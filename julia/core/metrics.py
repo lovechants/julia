@@ -2,7 +2,6 @@ import numpy as np
 from typing import Union, List, Dict, Optional, Tuple, Any
 from julia.core.tensor import Tensor
 from abc import ABC, abstractmethod
-import warnings
 
 
 class Metric(ABC):

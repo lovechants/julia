@@ -1,6 +1,5 @@
 import numpy as np
-from julia.core.tensor import Tensor, _ensure_tensor, Context, Function
-from typing import Dict, Tuple, List, Union, Any, Optional
+from julia.core.tensor import Tensor, _ensure_tensor, Function
 
 # Starting with Conv functions 
 class Conv1DFunction(Function):

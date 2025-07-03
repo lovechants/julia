@@ -1,7 +1,7 @@
 import numpy as np 
-from julia.core.tensor import Tensor, Function, _ensure_tensor 
+from julia.core.tensor import Tensor, _ensure_tensor 
 from julia.core.nn.layers import Layer
-from typing import Tuple, Union, List, Optional
+from typing import Tuple, Union, Optional
 
 class MaxPool2D(Layer):
     """

@@ -1,19 +1,7 @@
-import os
-import tempfile
-import subprocess
-import numpy as np
-from typing import Dict, List, Tuple, Any, Optional
-from julia.core.ir import IRGraph, IRNode, DataType
-from julia.core.backends.metal.device_management import MetalDeviceManager, METAL_AVAILABLE
+from julia.core.backends.metal.device_management import METAL_AVAILABLE
 
 if METAL_AVAILABLE:
-    from Metal import (
-        MTLLibrary,
-        MTLFunction,
-        MTLComputePipelineState,
-        MTLSize,
-        MTLCreateSystemDefaultDevice
-    )
+    pass
 
 class MetalKernalRunner:
     pass 
