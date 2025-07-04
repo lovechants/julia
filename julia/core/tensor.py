@@ -5,8 +5,6 @@ import inspect
 
 """
 Core Tensor class (with autograd)
-
-ok
 """
 
 
