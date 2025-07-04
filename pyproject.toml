@@ -152,9 +152,6 @@ exclude = [
 fixable = ["ALL"]
 unfixable = []
 
-# Show source code for violations
-show-source = true
-
 [tool.ruff.per-file-ignores]
 # Allow certain things in test files
 "tests/**/*.py" = [
