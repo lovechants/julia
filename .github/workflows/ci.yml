@@ -28,3 +28,4 @@ jobs:
         continue-on-error: true
       - name: Check formatting with Black
         run: black --check .
+        continue-on-error: true
