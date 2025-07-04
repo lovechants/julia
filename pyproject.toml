@@ -1,0 +1,254 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "julia"
+description = "Educational ML/DL framework built from scratch"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Jayden F., BearAI, and Julia Framework Contributors"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.21.0",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-xdist",
+    "pytest-benchmark",
+    "black",
+    "ruff",
+    "pre-commit",
+]
+backends = [
+    "llvmlite",
+    "onnx",
+    "psutil",
+]
+viz = [
+    "aliyah",
+]
+all = [
+    "julia-framework[dev,backends,viz]",
+]
+
+[project.urls]
+Homepage = "https://github.com/lovechants/julia"
+Repository = "https://github.com/your-username/julia-framework"
+"Bug Tracker" = "https://github.com/lovechants/julia/issues"
+
+[tool.setuptools.packages.find]
+include = ["julia*"]
+exclude = ["tests*"]
+
+[tool.setuptools_scm]
+write_to = "julia/_version.py"
+
+# Black configuration
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+# Ruff configuration
+[tool.ruff]
+# Same as Black's line length
+line-length = 88
+target-version = "py39"
+
+# Enable specific rule categories
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "N",   # pep8-naming
+    "S",   # flake8-bandit (security)
+    "PIE", # flake8-pie
+    "RET", # flake8-return
+    "ARG", # flake8-unused-arguments
+    "PTH", # flake8-use-pathlib
+    "PL",  # Pylint
+    "NPY", # NumPy-specific rules
+]
+
+# Ignore specific rules that are too strict for research code
+ignore = [
+    "E501",   # line too long (handled by Black)
+    "E741",   # ambiguous variable name (common in math: i, j, k, etc.)
+    "N803",   # argument name should be lowercase (allow mathematical notation)
+    "N806",   # variable in function should be lowercase (allow mathematical notation)
+    "S101",   # Use of assert (common in research/test code)
+    "PLR0913", # Too many arguments (ML functions often need many params)
+    "PLR0915", # Too many statements (complex ML algorithms)
+    "PLR2004", # Magic value used in comparison (thresholds in ML)
+    "B008",   # Do not perform function calls in argument defaults (needed for tensor ops)
+    "ARG002", # Unused method argument (abstract methods)
+    "PIE790", # Unnecessary pass statement (abstract methods)
+    "UP007",  # Use X | Y for type union (compatibility with older Python)
+    "SIM108", # Use ternary operator (sometimes less readable)
+]
+
+# Files to exclude from linting
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+# Allow autofix for these rules
+fixable = ["ALL"]
+unfixable = []
+
+# Group violations by containing file
+format = "grouped"
+
+# Show source code for violations
+show-source = true
+
+[tool.ruff.per-file-ignores]
+# Allow certain things in test files
+"tests/**/*.py" = [
+    "S101",   # Allow assert in tests
+    "PLR2004", # Allow magic values in tests
+    "ARG001", # Allow unused arguments in test fixtures
+]
+
+# Allow certain things in example files
+"julia/examples/**/*.py" = [
+    "S101",   # Allow assert in examples
+    "PLR2004", # Allow magic values in examples
+    "T201",   # Allow print statements in examples
+]
+
+# Allow certain things in __init__.py files
+"**/__init__.py" = [
+    "F401",   # Allow unused imports (re-exports)
+]
+
+[tool.ruff.isort]
+# Import sorting configuration
+known-first-party = ["julia"]
+force-single-line = false
+combine-as-imports = true
+split-on-trailing-comma = true
+
+[tool.ruff.mccabe]
+# Complexity threshold
+max-complexity = 12
+
+[tool.ruff.pylint]
+# Pylint-style rules
+max-args = 8  # Increased for ML functions
+max-branches = 15  # Increased for ML algorithms
+max-returns = 8  # Increased for ML functions
+max-statements = 60  # Increased for ML implementations
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers --tb=short"
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+    "*_test.py",
+]
+python_classes = [
+    "Test*",
+]
+python_functions = [
+    "test_*",
+]
+markers = [
+    "autograd: tests for autograd engine and operations",
+    # CPU Compiler backends
+    "compiler_cpu: all CPU compiler backends",
+    "compiler_cpu_llvm: LLVM CPU backend tests",
+    "compiler_cpu_clang: Clang CPU backend tests",
+    # GPU Compiler backends  
+    "compiler_gpu: all GPU compiler backends",
+    "compiler_gpu_cuda: CUDA backend tests",
+    "compiler_gpu_triton: Triton backend tests",
+    "compiler_gpu_opencl: OpenCL backend tests",
+    "compiler_gpu_rocm: ROCm backend tests",
+    "compiler_gpu_metal: Apple Metal backend tests",
+    # General categories
+    "neural_network: tests for neural network layers",
+    "numerical: tests for numerical accuracy",
+    "memory: tests for memory management",
+    "memory_profiling: tests requiring psutil for memory profiling",
+    "integration: integration tests with examples",
+    # Serialization
+    "serialization: all serialization tests",
+    "serialization_onnx: ONNX export/import tests", 
+    "serialization_ir: IR graph tests",
+    # Performance and misc
+    "benchmark: performance benchmark tests",
+    "slow: tests that take a long time to run",
+    "profiling: profiler functionality tests",
+    "data: data loading and processing tests",
+]
+
+# Docstring configuration for future use
+[tool.pydocstyle]
+convention = "numpy"
+ignore = [
+    "D100",  # Missing docstring in public module
+    "D104",  # Missing docstring in public package
+    "D213",  # Multi-line docstring summary should start at the second line
+    "D203",  # 1 blank line required before class docstring
+]
