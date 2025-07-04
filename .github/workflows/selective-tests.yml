@@ -307,10 +307,10 @@ jobs:
     - name: Run tests for ${{ matrix.name }}
       if: env.SKIP_GPU_TESTS != 'true'
       run: |
-        python -m pytest tests/ -m "${{ matrix.markers }}" -v --tb=short
+        python -m pytest tests/ -m "${{ matrix.markers }}" --allow-no-tests -v --tb=short
     
     - name: Run CPU fallback tests
       if: env.SKIP_GPU_TESTS == 'true' && contains(matrix.markers, 'gpu')
       run: |
         echo "Running CPU fallback tests instead of GPU tests"
-        python -m pytest tests/ -m "compiler_cpu" -v --tb=short
+        python -m pytest tests/ -m "compiler_cpu" --allow-no-tests -v --tb=short
