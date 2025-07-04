@@ -1,311 +1,621 @@
 # Selective testing workflow based on file changes
+
 name: Selective Tests
 
+
+
 on:
+
   push:
+
     branches: [ main, develop ]
+
   pull_request:
+
     branches: [ main, develop ]
+
+
 
 jobs:
+
   selective-test:
+
     name: Run Tests Based on Changes
+
     runs-on: ubuntu-latest
-    
+
+
+
     steps:
+
     - uses: actions/checkout@v4
+
       with:
+
         fetch-depth: 0
-    
+
+
+
     - name: Set up Python
+
       uses: actions/setup-python@v4
+
       with:
+
         python-version: '3.9'
-    
+
+
+
     - name: Install dependencies
+
       run: |
+
         python -m pip install --upgrade pip
+
         pip install numpy pytest-xdist pytest-benchmark
+
         pip install --force-reinstall "pytest>=7.1.0"
+
         pip install llvmlite || echo "LLVM not available"
+
         pip install onnx || echo "ONNX not available"
+
         pip install psutil || echo "psutil not available"
+
         pip install -e .
+
     
+
     - name: Run targeted tests based on changes
+
       run: |
+
         set -e
+
+
+        
+
+
         working-directory: julia
+
         if [ "${{ github.event_name }}" = "pull_request" ]; then
+
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
         else
+
           CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD)
+
         fi
+
         
+
         echo "Changed files:"
+
         echo "$CHANGED_FILES"
+
         echo ""
+
         
+
         # Always run basic tests
+
         echo "Running basic tests"
+
         # This can be true after marking original tests
+
         #python -m pytest tests/ -m "not slow and not benchmark" -v --tb=short 
+
         
+
         # Backend/compiler tests
+
         if echo "$CHANGED_FILES" | grep -E "(backend|llvm|cuda|metal|clang|triton|compiler)" > /dev/null; then
+
           echo "Backend changes detected - running compiler tests"
+
           python -m pytest tests/ -m compiler -v --tb=short
+
         fi
+
         
+
         # Autograd/ops tests  
+
         if echo "$CHANGED_FILES" | grep -E "(ops|autograd|tensor\.py|Function)" > /dev/null; then
+
           echo "Operations/autograd changes detected - running autograd tests"
+
           python -m pytest tests/ -m autograd -v --tb=short
+
         fi
+
         
+
         # Neural network tests
+
         if echo "$CHANGED_FILES" | grep -E "(nn/|conv|pool|linear|attention)" > /dev/null; then
+
           echo "Neural network changes detected - running NN tests"
+
           python -m pytest tests/ -m neural_network -v --tb=short
+
         fi
+
         
+
         # Numerical accuracy tests
+
         if echo "$CHANGED_FILES" | grep -E "(ops/|loss\.py|optim\.py)" > /dev/null; then
+
           echo "Operations/optimization changes detected - running numerical tests"
+
           python -m pytest tests/ -m numerical -v --tb=short
+
         fi
+
         
+
         # Memory management tests
+
         if echo "$CHANGED_FILES" | grep -E "(memory\.py)" > /dev/null; then
+
           echo "Memory changes detected - running memory tests"
+
           python -m pytest tests/ -m memory -v --tb=short
+
         fi
+
         
+
         # Integration tests for examples
+
         if echo "$CHANGED_FILES" | grep -E "(examples/)" > /dev/null; then
+
           echo "Example changes detected - running integration tests"
+
           python -m pytest tests/ -m integration --allow-no-tests -v --tb=short
+
         fi
+
         
+
         # IR/serialization tests
+
         if echo "$CHANGED_FILES" | grep -E "(ir\.py|onnx\.py|utils/.*_registry\.py)" > /dev/null; then
+
           echo "IR/ONNX changes detected - running serialization tests"
+
           python -m pytest tests/ -m serialization -v --tb=short
+
         fi
+
         
+
         # Profiling tests
+
         if echo "$CHANGED_FILES" | grep -E "(profiler\.py)" > /dev/null; then
+
           echo "Profiler changes detected - running profiling tests"
+
           python -m pytest tests/ -m profiling  -v --tb=short
+
         fi
+
         
+
         # Data handling tests
+
         if echo "$CHANGED_FILES" | grep -E "(data\.py|data_utils\.py)" > /dev/null; then
+
           echo "Data handling changes detected - running data tests"
+
           python -m pytest tests/ -m data  -v --tb=short
+
         fi
+
         
+
         # Benchmarks for performance-critical changes
+
         if echo "$CHANGED_FILES" | grep -E "(ops/|autograd|tensor\.py|backend/)" > /dev/null; then
+
           echo "Performance-critical changes detected - running benchmarks"
+
           python -m pytest tests/ -m benchmark --benchmark-only -v --tb=short
+
         fi
+
         
+
         # Slow tests for core framework changes
+
         if echo "$CHANGED_FILES" | grep -E "(tensor\.py|autograd\.py|ops\.py)" > /dev/null; then
+
           echo "Core framework changes detected - running slow tests"
+
           python -m pytest tests/ -m slow  -v --tb=short
+
         fi
+
     
+
     - name: Upload test results
+
       uses: actions/upload-artifact@v4
+
       if: always()
+
       with:
+
         name: test-results
+
         path: |
+
           pytest-report.xml
+
           .coverage
+
         retention-days: 30
 
+
+
   test-matrix:
+
     name: Test Matrix for Core Changes
-    working-directory: julia
+
     runs-on: ubuntu-latest
+
     if: contains(github.event.pull_request.title, '[test-matrix]') || github.event_name == 'push'
+
     strategy:
+
       matrix:
+
         python-version: ['3.8', '3.9', '3.10', '3.11']
+
         test-type: ['autograd', 'numerical', 'neural_network']
-    
+
+
+
     steps:
+
     - uses: actions/checkout@v4
+
       with:
+
         fetch-depth: 0
-    
+
+
+
     - name: Set up Python ${{ matrix.python-version }}
+
       uses: actions/setup-python@v4
+
       with:
+
         python-version: ${{ matrix.python-version }}
-    
+
+
+
     - name: Install dependencies
+
       run: |
+
         python -m pip install --upgrade pip
+
         pip install numpy pytest
+
         pip install -e .
+
     
+
     - name: Run ${{ matrix.test-type }} tests
+
       run: |
+
         python -m pytest tests/ -m "${{ matrix.test-type }}" -v --tb=short
 
+
+
   critical-path-tests:
+
     name: Critical Path Tests
+
     runs-on: ubuntu-latest
-    working-directory: julia
+
+
+
     steps:
+
     - uses: actions/checkout@v4
-    
+
+
+
     - name: Set up Python
+
       uses: actions/setup-python@v4
+
       with:
+
         python-version: '3.9'
-    
+
+
+
     - name: Install dependencies
+
       run: |
+
         python -m pip install --upgrade pip
+
         pip install numpy pytest
+
         pip install -e .
+
     
+
     # - name: Run critical path tests #Boilerplate to fix at some point soon
+
     #   run: |
+
     #     echo "Running critical path tests"
+
     #
+
     #     # Core tensor operations
+
     #     python -m pytest tests/ -k "test_tensor_creation or test_basic_arithmetic or test_autograd_simple" -v
+
     #
+
     #     # Basic autograd functionality
+
     #     python -m pytest tests/ -k "test_backward_simple or test_gradient_flow" -v
+
     #
+
     #     # Essential operations
+
     #     python -m pytest tests/ -k "test_matmul_basic or test_relu_basic or test_sigmoid_basic" -v
 
+
+
   backend-tests:
+
     name: Backend-Specific Tests
-    working-directory: julia
+
     runs-on: ${{ matrix.os }}
+
     strategy:
+
       fail-fast: false
+
       matrix:
+
         include:
+
           - name: "LLVM CPU Backend"
+
             os: ubuntu-latest
+
             install: "llvmlite"
+
             markers: "compiler_cpu_llvm"
+
           - name: "Clang CPU Backend"
+
             os: ubuntu-latest
+
             install: "clang"
+
             markers: "compiler_cpu_clang"
+
             setup: |
+
               sudo apt-get update
+
               sudo apt-get install -y clang
+
           - name: "CUDA Backend"
+
             os: ubuntu-latest
+
             install: "pycuda"
+
             markers: "compiler_gpu_cuda"
+
             setup: |
+
               wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+
               sudo dpkg -i cuda-keyring_1.0-1_all.deb
+
               sudo apt-get update
+
               sudo apt-get -y install cuda-toolkit-11-8
+
             skip_on_no_gpu: true
+
           - name: "Triton Backend"
+
             os: ubuntu-latest
+
             install: "triton"
+
             markers: "compiler_gpu_triton"
+
             setup: |
+
               wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+
               sudo dpkg -i cuda-keyring_1.0-1_all.deb
+
               sudo apt-get update
+
               sudo apt-get -y install cuda-toolkit-11-8
+
             skip_on_no_gpu: true
+
           - name: "OpenCL Backend"
+
             os: ubuntu-latest
+
             install: "pyopencl"
+
             markers: "compiler_gpu_opencl"
+
             setup: |
+
               sudo apt-get update
+
               sudo apt-get install -y opencl-headers ocl-icd-opencl-dev
+
           - name: "ROCm Backend"
+
             os: ubuntu-latest
+
             install: "hip-python"
+
             markers: "compiler_gpu_rocm"
+
             setup: |
+
               wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
+
               echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/debian/ ubuntu main' | sudo tee /etc/apt/sources.list.d/rocm.list
+
               sudo apt-get update
+
               sudo apt-get install -y rocm-dev
+
             skip_on_no_gpu: true
+
           - name: "Metal Backend"
+
             os: macos-latest
+
             install: "pyobjc-framework-Metal"
+
             markers: "compiler_gpu_metal"
+
           - name: "ONNX Support"
+
             os: ubuntu-latest
+
             install: "onnx onnxruntime"
+
             markers: "serialization_onnx"
+
           - name: "Memory Profiling"
+
             os: ubuntu-latest
+
             install: "psutil"
+
             markers: "memory_profiling"
 
+
+
     steps:
+
     - uses: actions/checkout@v4
 
+
+
     - name: Set up Python
+
       uses: actions/setup-python@v4
+
       with:
+
         python-version: '3.9'
 
+
+
     - name: Install base dependencies
+
       run: |
+
         python -m pip install --upgrade pip
+
         pip install numpy pytest
+
         pip install -e .
 
+
+
     - name: System setup for ${{ matrix.name }}
+
       if: matrix.setup
+
       run: ${{ matrix.setup }}
 
+
+
     - name: Install backend dependencies
+
       run: |
+
         pip install ${{ matrix.install }}
+
       continue-on-error: ${{ matrix.skip_on_no_gpu == true }}
 
+
+
     - name: Check GPU availability
+
       if: matrix.skip_on_no_gpu == true
+
       run: |
+
         if ! nvidia-smi &> /dev/null; then
+
           echo "No GPU detected, skipping GPU tests"
+
           echo "SKIP_GPU_TESTS=true" >> $GITHUB_ENV
+
         fi
+
       continue-on-error: true
 
+
+
     - name: Run tests for ${{ matrix.name }} if any exist
+
       if: env.SKIP_GPU_TESTS != 'true'
+
       run: |
+
         marker="${{ matrix.markers }}"
+
         if grep -r "@pytest.mark.${marker}" tests/; then
+
           echo "Running tests for marker: $marker"
+
           python -m pytest tests/ -m "$marker" -v --tb=short
+
         else
+
           echo "No tests found for marker: $marker, skipping."
+
         fi
 
+
+
     - name: Run CPU fallback tests
+
       if: env.SKIP_GPU_TESTS == 'true' && contains(matrix.markers, 'gpu')
+
       run: |
+
         if grep -r "@pytest.mark.compiler_cpu" tests/; then
+
           echo "Running CPU fallback tests"
+
           python -m pytest tests/ -m "compiler_cpu" -v --tb=short
+
         else
+
           echo "No CPU fallback tests found, skipping."
+
         fi
