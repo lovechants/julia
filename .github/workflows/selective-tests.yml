@@ -66,129 +66,129 @@ jobs:
 
     
 
-  - name: Run targeted tests based on changes
-    working-directory: julia
-    run: |
-      set -e
-      if [ "${{ github.event_name }}" = "pull_request" ]; then
-        CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-      else
-        CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD)
-      fi
-
-      echo "Changed files:"
-      echo "$CHANGED_FILES"
-      echo ""
-
-      # Backend/compiler tests
-      if echo "$CHANGED_FILES" | grep -E "(backend|llvm|cuda|metal|clang|triton|compiler)" > /dev/null; then
-        echo "Backend changes detected - running compiler tests"
-        if grep -r "@pytest.mark.compiler" tests/; then
-          python -m pytest tests/ -m compiler -v --tb=short
+    - name: Run targeted tests based on changes
+      working-directory: julia
+      run: |
+        set -e
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
         else
-          echo "No compiler tests found, skipping."
+          CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD)
         fi
-      fi
 
-      # Autograd/ops tests  
-      if echo "$CHANGED_FILES" | grep -E "(ops|autograd|tensor\.py|Function)" > /dev/null; then
-        echo "Operations/autograd changes detected - running autograd tests"
-        if grep -r "@pytest.mark.autograd" tests/; then
-          python -m pytest tests/ -m autograd -v --tb=short
-        else
-          echo "No autograd tests found, skipping."
-        fi
-      fi
+        echo "Changed files:"
+        echo "$CHANGED_FILES"
+        echo ""
 
-      # Neural network tests
-      if echo "$CHANGED_FILES" | grep -E "(nn/|conv|pool|linear|attention)" > /dev/null; then
-        echo "Neural network changes detected - running NN tests"
-        if grep -r "@pytest.mark.neural_network" tests/; then
-          python -m pytest tests/ -m neural_network -v --tb=short
-        else
-          echo "No neural_network tests found, skipping."
+        # Backend/compiler tests
+        if echo "$CHANGED_FILES" | grep -E "(backend|llvm|cuda|metal|clang|triton|compiler)" > /dev/null; then
+          echo "Backend changes detected - running compiler tests"
+          if grep -r "@pytest.mark.compiler" tests/; then
+            python -m pytest tests/ -m compiler -v --tb=short
+          else
+            echo "No compiler tests found, skipping."
+          fi
         fi
-      fi
 
-      # Numerical accuracy tests
-      if echo "$CHANGED_FILES" | grep -E "(ops/|loss\.py|optim\.py)" > /dev/null; then
-        echo "Operations/optimization changes detected - running numerical tests"
-        if grep -r "@pytest.mark.numerical" tests/; then
-          python -m pytest tests/ -m numerical -v --tb=short
-        else
-          echo "No numerical tests found, skipping."
+        # Autograd/ops tests  
+        if echo "$CHANGED_FILES" | grep -E "(ops|autograd|tensor\.py|Function)" > /dev/null; then
+          echo "Operations/autograd changes detected - running autograd tests"
+          if grep -r "@pytest.mark.autograd" tests/; then
+            python -m pytest tests/ -m autograd -v --tb=short
+          else
+            echo "No autograd tests found, skipping."
+          fi
         fi
-      fi
 
-      # Memory management tests
-      if echo "$CHANGED_FILES" | grep -E "(memory\.py)" > /dev/null; then
-        echo "Memory changes detected - running memory tests"
-        if grep -r "@pytest.mark.memory" tests/; then
-          python -m pytest tests/ -m memory -v --tb=short
-        else
-          echo "No memory tests found, skipping."
+        # Neural network tests
+        if echo "$CHANGED_FILES" | grep -E "(nn/|conv|pool|linear|attention)" > /dev/null; then
+          echo "Neural network changes detected - running NN tests"
+          if grep -r "@pytest.mark.neural_network" tests/; then
+            python -m pytest tests/ -m neural_network -v --tb=short
+          else
+            echo "No neural_network tests found, skipping."
+          fi
         fi
-      fi
 
-      # Integration tests for examples
-      if echo "$CHANGED_FILES" | grep -E "(examples/)" > /dev/null; then
-        echo "Example changes detected - running integration tests"
-        if grep -r "@pytest.mark.integration" tests/; then
-          python -m pytest tests/ -m integration -v --tb=short
-        else
-          echo "No integration tests found, skipping."
+        # Numerical accuracy tests
+        if echo "$CHANGED_FILES" | grep -E "(ops/|loss\.py|optim\.py)" > /dev/null; then
+          echo "Operations/optimization changes detected - running numerical tests"
+          if grep -r "@pytest.mark.numerical" tests/; then
+            python -m pytest tests/ -m numerical -v --tb=short
+          else
+            echo "No numerical tests found, skipping."
+          fi
         fi
-      fi
 
-      # IR/serialization tests
-      if echo "$CHANGED_FILES" | grep -E "(ir\.py|onnx\.py|utils/.*_registry\.py)" > /dev/null; then
-        echo "IR/ONNX changes detected - running serialization tests"
-        if grep -r "@pytest.mark.serialization" tests/; then
-          python -m pytest tests/ -m serialization -v --tb=short
-        else
-          echo "No serialization tests found, skipping."
+        # Memory management tests
+        if echo "$CHANGED_FILES" | grep -E "(memory\.py)" > /dev/null; then
+          echo "Memory changes detected - running memory tests"
+          if grep -r "@pytest.mark.memory" tests/; then
+            python -m pytest tests/ -m memory -v --tb=short
+          else
+            echo "No memory tests found, skipping."
+          fi
         fi
-      fi
 
-      # Profiling tests
-      if echo "$CHANGED_FILES" | grep -E "(profiler\.py)" > /dev/null; then
-        echo "Profiler changes detected - running profiling tests"
-        if grep -r "@pytest.mark.profiling" tests/; then
-          python -m pytest tests/ -m profiling -v --tb=short
-        else
-          echo "No profiling tests found, skipping."
+        # Integration tests for examples
+        if echo "$CHANGED_FILES" | grep -E "(examples/)" > /dev/null; then
+          echo "Example changes detected - running integration tests"
+          if grep -r "@pytest.mark.integration" tests/; then
+            python -m pytest tests/ -m integration -v --tb=short
+          else
+            echo "No integration tests found, skipping."
+          fi
         fi
-      fi
 
-      # Data handling tests
-      if echo "$CHANGED_FILES" | grep -E "(data\.py|data_utils\.py)" > /dev/null; then
-        echo "Data handling changes detected - running data tests"
-        if grep -r "@pytest.mark.data" tests/; then
-          python -m pytest tests/ -m data -v --tb=short
-        else
-          echo "No data tests found, skipping."
+        # IR/serialization tests
+        if echo "$CHANGED_FILES" | grep -E "(ir\.py|onnx\.py|utils/.*_registry\.py)" > /dev/null; then
+          echo "IR/ONNX changes detected - running serialization tests"
+          if grep -r "@pytest.mark.serialization" tests/; then
+            python -m pytest tests/ -m serialization -v --tb=short
+          else
+            echo "No serialization tests found, skipping."
+          fi
         fi
-      fi
 
-      # Benchmarks for performance-critical changes
-      if echo "$CHANGED_FILES" | grep -E "(ops/|autograd|tensor\.py|backend/)" > /dev/null; then
-        echo "Performance-critical changes detected - running benchmarks"
-        if grep -r "@pytest.mark.benchmark" tests/; then
-          python -m pytest tests/ -m benchmark --benchmark-only -v --tb=short
-        else
-          echo "No benchmark tests found, skipping."
+        # Profiling tests
+        if echo "$CHANGED_FILES" | grep -E "(profiler\.py)" > /dev/null; then
+          echo "Profiler changes detected - running profiling tests"
+          if grep -r "@pytest.mark.profiling" tests/; then
+            python -m pytest tests/ -m profiling -v --tb=short
+          else
+            echo "No profiling tests found, skipping."
+          fi
         fi
-      fi
 
-      # Slow tests for core framework changes
-      if echo "$CHANGED_FILES" | grep -E "(tensor\.py|autograd\.py|ops\.py)" > /dev/null; then
-        echo "Core framework changes detected - running slow tests"
-        if grep -r "@pytest.mark.slow" tests/; then
-          python -m pytest tests/ -m slow -v --tb=short
-        else
-          echo "No slow tests found, skipping."
+        # Data handling tests
+        if echo "$CHANGED_FILES" | grep -E "(data\.py|data_utils\.py)" > /dev/null; then
+          echo "Data handling changes detected - running data tests"
+          if grep -r "@pytest.mark.data" tests/; then
+            python -m pytest tests/ -m data -v --tb=short
+          else
+            echo "No data tests found, skipping."
+          fi
         fi
-      fi
+
+        # Benchmarks for performance-critical changes
+        if echo "$CHANGED_FILES" | grep -E "(ops/|autograd|tensor\.py|backend/)" > /dev/null; then
+          echo "Performance-critical changes detected - running benchmarks"
+          if grep -r "@pytest.mark.benchmark" tests/; then
+            python -m pytest tests/ -m benchmark --benchmark-only -v --tb=short
+          else
+            echo "No benchmark tests found, skipping."
+          fi
+        fi
+
+        # Slow tests for core framework changes
+        if echo "$CHANGED_FILES" | grep -E "(tensor\.py|autograd\.py|ops\.py)" > /dev/null; then
+          echo "Core framework changes detected - running slow tests"
+          if grep -r "@pytest.mark.slow" tests/; then
+            python -m pytest tests/ -m slow -v --tb=short
+          else
+            echo "No slow tests found, skipping."
+          fi
+        fi
 
     
 
