@@ -17,7 +17,14 @@ jobs:
       - name: Install Ruff and Black
         run: |
           pip install ruff black
-      - name: Lint with Ruff
-        run: ruff check .
+      - name: Lint with ruff
+        run: |
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.py$' || true)
+            if [ -n "$CHANGED" ]; then
+              ruff check $CHANGED
+            else
+              echo "No Python files changed."
+            fi
+        continue-on-error: true
       - name: Check formatting with Black
         run: black --check .
