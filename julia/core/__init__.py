@@ -4,6 +4,7 @@ from julia.core.ir_bridge import trace, execute_graph
 
 # Import registries to ensure operations are registered
 import julia.core.utils.ops_registry
+
 try:
     import julia.core.utils.onnx_registry
 except ImportError:

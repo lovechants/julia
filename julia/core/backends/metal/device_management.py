@@ -14,16 +14,19 @@ try:
             MTLCommandBuffer,
             MTLComputeCommandEncoder,
             MTLResourceStorageModeShared,
-            MTLResourceStorageModePrivate
+            MTLResourceStorageModePrivate,
         )
+
         METAL_AVAILABLE = True
     else:
         METAL_AVAILABLE = False
 except ImportError:
     METAL_AVAILABLE = False
 
+
 class MetalBuffer:
     pass
 
+
 class MetalDeviceManager:
-    pass 
+    pass

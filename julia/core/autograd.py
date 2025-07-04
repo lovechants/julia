@@ -1,7 +1,9 @@
-import uuid 
+import uuid
+
 """
 Autograd Graph 
 """
+
 
 class Node:
     def __init__(self, op_name, ctx, inputs):
@@ -13,6 +15,7 @@ class Node:
         for input in inputs:
             if isinstance(input, Tensor) and input.requires_grad and input._node:
                 self.next_nodes.append(input._node)
+
 
 class Graph:
     def __init__(self):

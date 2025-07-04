@@ -104,14 +104,14 @@ def test_conv2d_pytorch_comparison(
     )  # Get NumPy array from PyTorch tensor
 
     # Check shapes first
-    assert julia_output_np.shape == torch_output_np.shape, (
-        f"Shape mismatch: Julia={julia_output_np.shape}, PyTorch={torch_output_np.shape}"
-    )
+    assert (
+        julia_output_np.shape == torch_output_np.shape
+    ), f"Shape mismatch: Julia={julia_output_np.shape}, PyTorch={torch_output_np.shape}"
 
     # Check values using np.allclose for float comparison
     # Adjust tolerances (rtol, atol) if needed based on float precision
-    assert np.allclose(julia_output_np, torch_output_np, rtol=1e-5, atol=1e-6), (
-        "Value mismatch between Julia and PyTorch outputs."
-    )
+    assert np.allclose(
+        julia_output_np, torch_output_np, rtol=1e-5, atol=1e-6
+    ), "Value mismatch between Julia and PyTorch outputs."
 
     print("Outputs match")

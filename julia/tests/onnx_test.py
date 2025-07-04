@@ -148,9 +148,9 @@ def test_neural_network_export_import():
 
     # Verify the last node
     output_node = imported_graph.outputs[0]
-    assert output_node.op_type == "Sigmoid", (
-        f"Expected Sigmoid op, got {output_node.op_type}"
-    )
+    assert (
+        output_node.op_type == "Sigmoid"
+    ), f"Expected Sigmoid op, got {output_node.op_type}"
 
 
 def test_tensor_to_onnx_roundtrip():
@@ -212,9 +212,9 @@ def test_tensor_to_onnx_roundtrip():
         # Verify the outputs are close
         if hasattr(y_imported, "data") and hasattr(y_orig, "data"):
             print(f"Max difference: {np.max(np.abs(y_imported.data - y_orig.data))}")
-            assert np.allclose(y_imported.data, y_orig.data, rtol=1e-5, atol=1e-5), (
-                "Outputs should match"
-            )
+            assert np.allclose(
+                y_imported.data, y_orig.data, rtol=1e-5, atol=1e-5
+            ), "Outputs should match"
     else:
         print("Skipping execution comparison, imported graph has no inputs")
 
@@ -236,9 +236,9 @@ def test_tensor_to_onnx_roundtrip():
     # Verify the outputs are close
     if hasattr(y_imported, "data") and hasattr(y_orig, "data"):
         print(f"Max difference: {np.max(np.abs(y_imported.data - y_orig.data))}")
-        assert np.allclose(y_imported.data, y_orig.data, rtol=1e-5, atol=1e-5), (
-            "Outputs should match"
-        )
+        assert np.allclose(
+            y_imported.data, y_orig.data, rtol=1e-5, atol=1e-5
+        ), "Outputs should match"
 
     assert imported_graph
 

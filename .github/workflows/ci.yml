@@ -1,0 +1,23 @@
+name: Lint and Format
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install Ruff and Black
+        run: |
+          pip install ruff black
+      - name: Lint with Ruff
+        run: ruff check .
+      - name: Check formatting with Black
+        run: black --check .

@@ -3,11 +3,17 @@ import numpy as np
 from julia.core.tensor import Tensor
 from julia.core.nn.conv import Conv2D
 from julia.core.nn.pooling import MaxPool2D
-from julia.core.nn.layers import Linear, Sequential, Flatten, Dropout, Layer # Import Layer
+from julia.core.nn.layers import (
+    Linear,
+    Sequential,
+    Flatten,
+    Dropout,
+    Layer,
+)  # Import Layer
 from julia.core.optim import SGD
 
 
-class SimpleCNN(Sequential): 
+class SimpleCNN(Sequential):
     def __init__(self, in_channels=1, num_classes=10):
         # Define layers
         conv1 = Conv2D(in_channels, 16, 3, 1, 1)
@@ -29,12 +35,9 @@ class SimpleCNN(Sequential):
         fc2 = Linear(128, num_classes)
 
         super().__init__(
-            conv1, relu1, pool1,
-            conv2, relu2, pool2,
-            flatten,
-            fc1, relu3, dropout,
-            fc2
+            conv1, relu1, pool1, conv2, relu2, pool2, flatten, fc1, relu3, dropout, fc2
         )
+
 
 def create_toy_dataset(num_samples=100, num_classes=10):
     # Create random 28x28 grayscale images
@@ -46,10 +49,11 @@ def create_toy_dataset(num_samples=100, num_classes=10):
     y_one_hot[np.arange(num_samples), y] = 1
     return X, y_one_hot
 
+
 def cross_entropy_loss(predictions: Tensor, targets_one_hot: np.ndarray):
     # Ensure targets is numpy array
     if isinstance(targets_one_hot, Tensor):
-         targets_one_hot = targets_one_hot.data
+        targets_one_hot = targets_one_hot.data
 
     # Softmax calculation (numerically stable)
     logits = predictions.data
@@ -59,7 +63,7 @@ def cross_entropy_loss(predictions: Tensor, targets_one_hot: np.ndarray):
 
     # NLL Loss
     N = logits.shape[0]
-    log_probs = np.log(probs + 1e-9) # Add epsilon for stability
+    log_probs = np.log(probs + 1e-9)  # Add epsilon for stability
     loss_value = -np.sum(targets_one_hot * log_probs) / N
 
     # Gradient of Loss w.r.t Logits (predictions)
@@ -69,7 +73,7 @@ def cross_entropy_loss(predictions: Tensor, targets_one_hot: np.ndarray):
     # Return loss value and gradient Tensor
     # Ideally, loss calculation itself should use Tensor ops for autograd
     # For now, we return the pre-computed gradient
-    loss_tensor = Tensor(np.array(loss_value)) # Loss is scalar
+    loss_tensor = Tensor(np.array(loss_value))  # Loss is scalar
     # We need to attach the gradient to the *predictions* tensor later
     # So, just return the gradient data for now.
     return loss_value, grad_data
@@ -91,18 +95,20 @@ def train(model: Layer, X: np.ndarray, y: np.ndarray, epochs=5, batch_size=32, l
             start_idx = i * batch_size
             end_idx = start_idx + batch_size
             X_batch = X_shuffled[start_idx:end_idx]
-            y_batch = y_shuffled[start_idx:end_idx] # One-hot targets
+            y_batch = y_shuffled[start_idx:end_idx]  # One-hot targets
 
-            X_batch_tensor = Tensor(X_batch, requires_grad=True) # Input needs grad usually
+            X_batch_tensor = Tensor(
+                X_batch, requires_grad=True
+            )  # Input needs grad usually
 
             # Zero gradients before forward/backward
-            optimizer.zero_grad() # Zeros gradients on parameters stored in optimizer
+            optimizer.zero_grad()  # Zeros gradients on parameters stored in optimizer
 
             # Set model to training mode (important for Dropout, BatchNorm)
             model.train(True)
 
             # Forward pass
-            predictions = model(X_batch_tensor) # Use model.__call__
+            predictions = model(X_batch_tensor)  # Use model.__call__
 
             # Compute loss and gradient w.r.t predictions
             loss_value, grad_data = cross_entropy_loss(predictions, y_batch)
@@ -117,9 +123,10 @@ def train(model: Layer, X: np.ndarray, y: np.ndarray, epochs=5, batch_size=32, l
         avg_loss = total_loss / num_batches if num_batches > 0 else total_loss
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
 
+
 def main():
     print("Creating Model")
-    model = SimpleCNN() 
+    model = SimpleCNN()
 
     print("Creating Toy Dataset")
     X, y_one_hot = create_toy_dataset(num_samples=320, num_classes=10)
@@ -129,11 +136,12 @@ def main():
 
     print("\nTraining Finished. Testing on single example")
     test_input = Tensor(np.random.randn(1, 1, 28, 28))
-    model.eval() 
-    output = model(test_input) # Use model.__call__
+    model.eval()
+    output = model(test_input)  # Use model.__call__
 
     print("Test output shape:", output.shape)
     print("Predicted class:", np.argmax(output.data))
+
 
 if __name__ == "__main__":
     main()

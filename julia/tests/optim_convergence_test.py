@@ -145,12 +145,12 @@ def test_optimizer_convergence(
         optimizer.step()  # Updates W and b based on gradients
 
         # Check parameters after step
-        assert np.all(np.isfinite(W.data)), (
-            f"W has NaN/Inf after step() in epoch {epoch}"
-        )
-        assert np.all(np.isfinite(b.data)), (
-            f"b has NaN/Inf after step() in epoch {epoch}"
-        )
+        assert np.all(
+            np.isfinite(W.data)
+        ), f"W has NaN/Inf after step() in epoch {epoch}"
+        assert np.all(
+            np.isfinite(b.data)
+        ), f"b has NaN/Inf after step() in epoch {epoch}"
 
         if (epoch + 1) % 50 == 0:
             print(
@@ -168,43 +168,39 @@ def test_optimizer_convergence(
     # 1. Loss should decrease (robust check for non-increase)
     assert final_loss < initial_loss or math.isclose(
         final_loss, initial_loss, rel_tol=1e-5
-    ), (
-        f"{optimizer_class.__name__}: Loss did not decrease significantly ({initial_loss=}, {final_loss=})"
-    )
+    ), f"{optimizer_class.__name__}: Loss did not decrease significantly ({initial_loss=}, {final_loss=})"
 
     # 2. Parameters W should have changed
-    assert not np.allclose(final_W_data, initial_W_data, atol=1e-8), (
-        f"{optimizer_class.__name__}: Parameter W did not change from initial value {initial_W_data}"
-    )
+    assert not np.allclose(
+        final_W_data, initial_W_data, atol=1e-8
+    ), f"{optimizer_class.__name__}: Parameter W did not change from initial value {initial_W_data}"
 
     # 3. Parameter b should have changed (This was the original problem!)
     # Use item() for comparison if b is scalar-like, otherwise compare arrays
     if final_b_data.size == 1:
         assert not math.isclose(
             final_b_data.item(), initial_b_data.item(), abs_tol=1e-8
-        ), (
-            f"{optimizer_class.__name__}: Parameter b did not change from initial value {initial_b_data.item()}"
-        )
+        ), f"{optimizer_class.__name__}: Parameter b did not change from initial value {initial_b_data.item()}"
     else:
-        assert not np.allclose(final_b_data, initial_b_data, atol=1e-8), (
-            f"{optimizer_class.__name__}: Parameter b did not change from initial value {initial_b_data}"
-        )
+        assert not np.allclose(
+            final_b_data, initial_b_data, atol=1e-8
+        ), f"{optimizer_class.__name__}: Parameter b did not change from initial value {initial_b_data}"
 
     # 4. Check for NaNs or Infs
     assert np.isfinite(final_loss), f"{optimizer_class.__name__}: Loss is NaN or Inf"
-    assert np.all(np.isfinite(final_W_data)), (
-        f"{optimizer_class.__name__}: Parameter W contains NaN or Inf"
-    )
-    assert np.all(np.isfinite(final_b_data)), (
-        f"{optimizer_class.__name__}: Parameter b contains NaN or Inf"
-    )
+    assert np.all(
+        np.isfinite(final_W_data)
+    ), f"{optimizer_class.__name__}: Parameter W contains NaN or Inf"
+    assert np.all(
+        np.isfinite(final_b_data)
+    ), f"{optimizer_class.__name__}: Parameter b contains NaN or Inf"
 
     # 5. Check for convergence
     if expected_to_converge:
         # May need adjustment based on epochs/LR
-        assert np.allclose(final_W_data, W_true, rtol=0.1, atol=0.2), (
-            f"{optimizer_class.__name__}: W did not converge to true value ({final_W_data=}, {W_true=})"
-        )
-        assert np.allclose(final_b_data, b_true, rtol=0.1, atol=0.2), (
-            f"{optimizer_class.__name__}: b did not converge to true value ({final_b_data=}, {b_true=})"
-        )
+        assert np.allclose(
+            final_W_data, W_true, rtol=0.1, atol=0.2
+        ), f"{optimizer_class.__name__}: W did not converge to true value ({final_W_data=}, {W_true=})"
+        assert np.allclose(
+            final_b_data, b_true, rtol=0.1, atol=0.2
+        ), f"{optimizer_class.__name__}: b did not converge to true value ({final_b_data=}, {b_true=})"

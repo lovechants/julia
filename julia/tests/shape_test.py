@@ -290,12 +290,16 @@ def test_shape_inference_reshape():
     print("Flatten shape:", flatten.shape)
 
     # Check correctness
-    assert reshape1.shape == (32, 28, 28), (
-        f"Expected (32, 28, 28), got {reshape1.shape}"
-    )
-    assert reshape2.shape == (32, 28, 28), (
-        f"Expected (32, 28, 28), got {reshape2.shape}"
-    )
+    assert reshape1.shape == (
+        32,
+        28,
+        28,
+    ), f"Expected (32, 28, 28), got {reshape1.shape}"
+    assert reshape2.shape == (
+        32,
+        28,
+        28,
+    ), f"Expected (32, 28, 28), got {reshape2.shape}"
     assert flatten.shape == (32, 784), f"Expected (32, 784), got {flatten.shape}"
 
     print("Reshape shape inference tests passed")
