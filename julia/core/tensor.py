@@ -5,7 +5,6 @@ import inspect
 
 """
 Core Tensor class (with autograd)
-i miss title fight
 """
 
 
