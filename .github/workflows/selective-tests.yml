@@ -285,6 +285,7 @@ jobs:
           echo "No GPU detected, skipping GPU tests"
           echo "SKIP_GPU_TESTS=true" >> $GITHUB_ENV
         fi
+      continue-on-error: true
 
     - name: Run tests for ${{ matrix.name }} if any exist
       if: env.SKIP_GPU_TESTS != 'true'
