@@ -129,6 +129,7 @@ jobs:
 
   test-matrix:
     name: Test Matrix for Core Changes
+    working-directory: julia
     runs-on: ubuntu-latest
     if: contains(github.event.pull_request.title, '[test-matrix]') || github.event_name == 'push'
     strategy:
@@ -159,7 +160,7 @@ jobs:
   critical-path-tests:
     name: Critical Path Tests
     runs-on: ubuntu-latest
-    
+    working-directory: julia
     steps:
     - uses: actions/checkout@v4
     
@@ -189,6 +190,7 @@ jobs:
 
   backend-tests:
     name: Backend-Specific Tests
+    working-directory: julia
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
