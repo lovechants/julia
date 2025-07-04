@@ -8,9 +8,7 @@ on:
 
 jobs:
   selective-test:
-    name: Run Tests Based on Changes
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,29 +17,24 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install numpy pytest-xdist pytest-benchmark
-          pip install --force-reinstall "pytest>=7.1.0"
-          pip install llvmlite || echo "LLVM not available"
-          pip install onnx || echo "ONNX not available"
-          pip install psutil || echo "psutil not available"
+          pip install numpy pytest
           pip install -e .
 
       - name: List files for debugging
-        working-directory: julia
         run: |
           pwd
           ls -l
           ls -l julia/tests || echo "No julia/tests directory"
 
-      - name: Run targeted tests based on changes
-        working-directory: julia
+      - name: Run selective tests based on changes
         run: |
           set -e
+          # Get changed files
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
           else
@@ -52,115 +45,37 @@ jobs:
           echo "$CHANGED_FILES"
           echo ""
 
-          # Backend/compiler tests
-          if echo "$CHANGED_FILES" | grep -E "(backend|llvm|cuda|metal|clang|triton|compiler)" > /dev/null; then
-            echo "Backend changes detected - running compiler tests"
-            if grep -r "@pytest.mark.compiler" julia/tests/; then
-              python -m pytest julia/tests/ -m compiler -v --tb=short
-            else
-              echo "No compiler tests found, skipping."
-            fi
-          fi
+          # Define marker patterns and their triggers
+          declare -A MARKERS
+          MARKERS[autograd]="ops|autograd|tensor\.py|Function"
+          MARKERS[compiler]="backend|llvm|cuda|metal|clang|triton|compiler"
+          MARKERS[neural_network]="nn/|conv|pool|linear|attention"
+          MARKERS[numerical]="ops/|loss\.py|optim\.py"
+          MARKERS[memory]="memory\.py"
+          MARKERS[integration]="examples/"
+          MARKERS[serialization]="ir\.py|onnx\.py|utils/.*_registry\.py"
+          MARKERS[profiling]="profiler\.py"
+          MARKERS[data]="data\.py|data_utils\.py"
+          MARKERS[benchmark]="ops/|autograd|tensor\.py|backend/"
+          MARKERS[slow]="tensor\.py|autograd\.py|ops\.py"
 
-          # Autograd/ops tests  
-          if echo "$CHANGED_FILES" | grep -E "(ops|autograd|tensor\.py|Function)" > /dev/null; then
-            echo "Operations/autograd changes detected - running autograd tests"
-            if grep -r "@pytest.mark.autograd" julia/tests/; then
-              python -m pytest julia/tests/ -m autograd -v --tb=short
-            else
-              echo "No autograd tests found, skipping."
+          # Run tests for each marker if relevant files changed and tests exist
+          for marker in "${!MARKERS[@]}"; do
+            pattern="${MARKERS[$marker]}"
+            if echo "$CHANGED_FILES" | grep -E "$pattern" > /dev/null; then
+              echo "Detected changes for marker: $marker (pattern: $pattern)"
+              if grep -r "@pytest.mark.$marker" julia/tests/; then
+                python -m pytest julia/tests/ -m "$marker" -v --tb=short
+              else
+                echo "No tests found for marker: $marker, skipping."
+              fi
             fi
-          fi
+          done
 
-          # Neural network tests
-          if echo "$CHANGED_FILES" | grep -E "(nn/|conv|pool|linear|attention)" > /dev/null; then
-            echo "Neural network changes detected - running NN tests"
-            if grep -r "@pytest.mark.neural_network" julia/tests/; then
-              python -m pytest julia/tests/ -m neural_network -v --tb=short
-            else
-              echo "No neural_network tests found, skipping."
-            fi
-          fi
-
-          # Numerical accuracy tests
-          if echo "$CHANGED_FILES" | grep -E "(ops/|loss\.py|optim\.py)" > /dev/null; then
-            echo "Operations/optimization changes detected - running numerical tests"
-            if grep -r "@pytest.mark.numerical" julia/tests/; then
-              python -m pytest julia/tests/ -m numerical -v --tb=short
-            else
-              echo "No numerical tests found, skipping."
-            fi
-          fi
-
-          # Memory management tests
-          if echo "$CHANGED_FILES" | grep -E "(memory\.py)" > /dev/null; then
-            echo "Memory changes detected - running memory tests"
-            if grep -r "@pytest.mark.memory" julia/tests/; then
-              python -m pytest julia/tests/ -m memory -v --tb=short
-            else
-              echo "No memory tests found, skipping."
-            fi
-          fi
-
-          # Integration tests for examples
-          if echo "$CHANGED_FILES" | grep -E "(examples/)" > /dev/null; then
-            echo "Example changes detected - running integration tests"
-            if grep -r "@pytest.mark.integration" julia/tests/; then
-              python -m pytest julia/tests/ -m integration -v --tb=short
-            else
-              echo "No integration tests found, skipping."
-            fi
-          fi
-
-          # IR/serialization tests
-          if echo "$CHANGED_FILES" | grep -E "(ir\.py|onnx\.py|utils/.*_registry\.py)" > /dev/null; then
-            echo "IR/ONNX changes detected - running serialization tests"
-            if grep -r "@pytest.mark.serialization" julia/tests/; then
-              python -m pytest julia/tests/ -m serialization -v --tb=short
-            else
-              echo "No serialization tests found, skipping."
-            fi
-          fi
-
-          # Profiling tests
-          if echo "$CHANGED_FILES" | grep -E "(profiler\.py)" > /dev/null; then
-            echo "Profiler changes detected - running profiling tests"
-            if grep -r "@pytest.mark.profiling" julia/tests/; then
-              python -m pytest julia/tests/ -m profiling -v --tb=short
-            else
-              echo "No profiling tests found, skipping."
-            fi
-          fi
-
-          # Data handling tests
-          if echo "$CHANGED_FILES" | grep -E "(data\.py|data_utils\.py)" > /dev/null; then
-            echo "Data handling changes detected - running data tests"
-            if grep -r "@pytest.mark.data" julia/tests/; then
-              python -m pytest julia/tests/ -m data -v --tb=short
-            else
-              echo "No data tests found, skipping."
-            fi
-          fi
-
-          # Benchmarks for performance-critical changes
-          if echo "$CHANGED_FILES" | grep -E "(ops/|autograd|tensor\.py|backend/)" > /dev/null; then
-            echo "Performance-critical changes detected - running benchmarks"
-            if grep -r "@pytest.mark.benchmark" julia/tests/; then
-              python -m pytest julia/tests/ -m benchmark --benchmark-only -v --tb=short
-            else
-              echo "No benchmark tests found, skipping."
-            fi
-          fi
-
-          # Slow tests for core framework changes
-          if echo "$CHANGED_FILES" | grep -E "(tensor\.py|autograd\.py|ops\.py)" > /dev/null; then
-            echo "Core framework changes detected - running slow tests"
-            if grep -r "@pytest.mark.slow" julia/tests/; then
-              python -m pytest julia/tests/ -m slow -v --tb=short
-            else
-              echo "No slow tests found, skipping."
-            fi
-          fi
+      - name: Always show test results
+        if: always()
+        run: |
+          echo "Selective testing job complete."
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
