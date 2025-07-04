@@ -35,7 +35,7 @@ jobs:
     - name: Run targeted tests based on changes
       run: |
         set -e
-        
+        working-directory: julia
         if [ "${{ github.event_name }}" = "pull_request" ]; then
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
         else
