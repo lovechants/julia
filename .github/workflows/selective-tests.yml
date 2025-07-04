@@ -117,7 +117,7 @@ jobs:
         fi
     
     - name: Upload test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: test-results
@@ -173,7 +173,7 @@ jobs:
         pip install numpy pytest
         pip install -e .
     
-    # - name: Run critical path tests boilerplate to come back to 
+    # - name: Run critical path tests #Boilerplate to fix at some point soon
     #   run: |
     #     echo "Running critical path tests"
     #
