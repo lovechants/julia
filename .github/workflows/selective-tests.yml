@@ -64,7 +64,12 @@ jobs:
 
         pip install -e .
 
-    
+    - name: List files for debugging
+      working-directory: julia
+      run: |
+        pwd
+        ls -l
+        ls -l tests || echo "No tests directory"   
 
     - name: Run targeted tests based on changes
       working-directory: julia
