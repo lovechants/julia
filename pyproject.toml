@@ -152,9 +152,6 @@ exclude = [
 fixable = ["ALL"]
 unfixable = []
 
-# Group violations by containing file
-format = "grouped"
-
 # Show source code for violations
 show-source = true
 
