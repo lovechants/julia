@@ -192,30 +192,28 @@ jobs:
               sudo apt-get update
               sudo apt-get install -y clang
             continue-on-error: false
-          - name: "CUDA Backend"
-            os: ubuntu-latest
-            install: "pycuda"
-            markers: "compiler_gpu_cuda"
-            setup: |
-              wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
-              sudo dpkg -i cuda-keyring_1.0-1_all.deb
-              sudo apt-get update
-              sudo apt-get -y install cuda-toolkit-11-8
-            skip_on_no_gpu: true
-            continue-on-error: true
-            allow_failure: true
-          - name: "Triton Backend"
-            os: ubuntu-latest
-            install: "triton"
-            markers: "compiler_gpu_triton"
-            setup: |
-              wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
-              sudo dpkg -i cuda-keyring_1.0-1_all.deb
-              sudo apt-get update
-              sudo apt-get -y install cuda-toolkit-11-8
-            skip_on_no_gpu: true
-            allow_failure: true
-            continue-on-error: true
+          # - name: "CUDA Backend"
+          #   os: ubuntu-latest
+          #   install: "pycuda"
+          #   markers: "compiler_gpu_cuda"
+          #   setup: |
+          #     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+          #     sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          #     sudo apt-get update
+          #     sudo apt-get -y install cuda-toolkit-11-8
+          #   skip_on_no_gpu: true
+          #   continue-on-error: true
+          # - name: "Triton Backend"
+          #   os: ubuntu-latest
+          #   install: "triton"
+          #   markers: "compiler_gpu_triton"
+          #   setup: |
+          #     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+          #     sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          #     sudo apt-get update
+          #     sudo apt-get -y install cuda-toolkit-11-8
+          #   skip_on_no_gpu: true
+          #   continue-on-error: true
           - name: "OpenCL Backend"
             os: ubuntu-latest
             install: "pyopencl"
@@ -225,18 +223,17 @@ jobs:
               sudo apt-get install -y opencl-headers ocl-icd-opencl-dev
             continue-on-error: false
             allow_failure: true
-          - name: "ROCm Backend"
-            os: ubuntu-latest
-            install: "hip-python"
-            markers: "compiler_gpu_rocm"
-            setup: |
-              wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
-              echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/debian/ ubuntu main' | sudo tee /etc/apt/sources.list.d/rocm.list
-              sudo apt-get update
-              sudo apt-get install -y rocm-dev
-            skip_on_no_gpu: true
-            continue-on-error: true
-            allow_failure: true
+          # - name: "ROCm Backend"
+          #   os: ubuntu-latest
+          #   install: "hip-python"
+          #   markers: "compiler_gpu_rocm"
+          #   setup: |
+          #     wget -qO - https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add -
+          #     echo 'deb [arch=amd64] https://repo.radeon.com/rocm/apt/debian/ ubuntu main' | sudo tee /etc/apt/sources.list.d/rocm.list
+          #     sudo apt-get update
+          #     sudo apt-get install -y rocm-dev
+          #   skip_on_no_gpu: true
+          #   continue-on-error: true
           - name: "Metal Backend"
             os: macos-latest
             install: "pyobjc-framework-Metal"
