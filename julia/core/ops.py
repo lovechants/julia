@@ -55,6 +55,24 @@ class Dropout(Function):
             grad_input_data = (grad_output.data * mask) / keep_prob
         return Tensor(grad_input_data), None, None
 
+class Grad(Function):
+    @staticmethod
+    def forward(ctx, y, x):
+        ctx.save_for_backwards(y, x)
+        # Clear previous grads
+        x.zero_grad()
+        y.backward()
+        grad = x.grad
+        ctx.save_data(grad=grad)
+        return grad
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        y, x = ctx.saved_tensors
+        grad = ctx.saved_data["grad"]
+        x.zero_grad()
+        grad.backward(grad_output)
+        return None, x.grad
 
 class Add(Function):
     @staticmethod
@@ -908,3 +926,4 @@ registry.register("Mean", Mean)
 registry.register("Var", Var)
 registry.register("Abs", Abs)
 registry.register("Max", Max)
+registry.register("Grad", Grad)
