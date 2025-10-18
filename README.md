@@ -28,6 +28,7 @@ Current workings:
 - [ ] more kernels 
 - [ ] working on easier metal library 
 - [ ] proper docs 
+- [ ] fix JVP / VJP primitive (second order hooks)
 
 ---
 
