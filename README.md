@@ -11,17 +11,36 @@ Accessible Machine Learning
 
 A living framework that evolves with current ML breakthroughs
 
+blog imfindingithard.com
+
+---
+
+## Update: 
+The plan is to continue working on this to make it more robust, I've taken a bit of a break. Roadmap is subject to change and I just write whatever is the most fun.
+Current workings:
+- [ ] More Stats 
+- [ ] Working on C++ header only library might use the bindings here but not sure yet [Dailia](https://github.com/lovechants/dalia)
+- [ ] Whatever is in Scikit-Learn is going to be implemented here 
+- [ ] polynomial chaos expansion (cool name)
+- [ ] advance algo calls
+- [ ] model zoo 
+- [ ] quantization 
+- [ ] more kernels 
+- [ ] working on easier metal library 
+- [ ] proper docs 
+
 ---
 
 ## Features 
 
 - AutoGrad
+- First order + second order operations.
+    - Check examples
 - Multiple Backends
     - LLVM 
     - CUDA
     - Metal
     - Clang 
-    - Triton
     - Triton + Native Julia Tensors without PyTorch dependancy
 - Onnx Support 
 - Terminal vis support through [Aliyah](https://github.com/lovechants/Aliyah/tree/main)
