@@ -1549,6 +1549,7 @@ class AdaptiveAvgPool2DFunction(Function):
             Output tensor of shape (batch_size, channels, output_height, output_width)
         """
         # Get input dimensions
+        print(f"DEBUG: output_size = {output_size}, type = {type(output_size)}")
         batch_size, channels, in_height, in_width = x.shape
         out_height, out_width = output_size
 
@@ -1564,18 +1565,12 @@ class AdaptiveAvgPool2DFunction(Function):
 
         # Perform adaptive average pooling
         for h_out in range(out_height):
-            # Calculate input window boundaries for this output position
-            h_start = int(np.floor(h_out * stride_h))
-            h_end = int(np.ceil((h_out + 1) * stride_h))
-            h_end = min(h_end, in_height)  # Ensure we don't go out of bounds
-
+            h_start = int(np.floor(h_out * in_height / out_height))
+            h_end = int(np.ceil((h_out + 1) * in_height / out_height))
+            
             for w_out in range(out_width):
-                # Calculate input window boundaries for this output position
-                w_start = int(np.floor(w_out * stride_w))
-                w_end = int(np.ceil((w_out + 1) * stride_w))
-                w_end = min(w_end, in_width)  # Ensure we don't go out of bounds
-
-                # Store window indices
+                w_start = int(np.floor(w_out * in_width / out_width))
+                w_end = int(np.ceil((w_out + 1) * in_width / out_width))
                 window_indices[h_out, w_out] = [h_start, h_end, w_start, w_end]
 
                 # Calculate average for each batch and channel
@@ -1589,7 +1584,7 @@ class AdaptiveAvgPool2DFunction(Function):
         # Save for backward
         ctx.save_data(input_shape=x.shape, window_indices=window_indices)
 
-        return Tensor(output)
+        return Tensor(output, requires_grad=x.requires_grad)
 
     @staticmethod
     def backward(ctx, grad_output):

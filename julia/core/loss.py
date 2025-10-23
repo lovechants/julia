@@ -72,9 +72,9 @@ class CustomLossTemplate(LossFunction):
         if self.reduction == "none":
             return loss
         elif self.reduction == "mean":
-            return Tensor(np.array([np.mean(loss.data)]))  # Ensure scalar tensor
+            return Tensor(np.mean(loss.data))  # Ensure scalar tensor
         elif self.reduction == "sum":
-            return Tensor(np.array([np.sum(loss.data)]))  # Ensure scalar tensor
+            return Tensor(np.sum(loss.data))  # Ensure scalar tensor
 
     def forward(self, y_pred: Tensor, y_true: Tensor) -> Tensor:
         """
@@ -1423,7 +1423,7 @@ class MultiTaskLoss:
         self.reduction = reduction
         # Initialize log variance parameters
         self.log_vars = [
-            Tensor(np.array([0.0]), requires_grad=True) for _ in range(num_tasks)
+            Tensor(0.0, requires_grad=True) for _ in range(num_tasks)
         ]
 
     def __call__(self, losses: List[Tensor]) -> Tensor:
@@ -1436,7 +1436,7 @@ class MultiTaskLoss:
         if len(losses) != self.num_tasks:
             raise ValueError(f"Expected {self.num_tasks} losses, got {len(losses)}")
 
-        total_loss = Tensor(np.array([0.0]))  # Start with proper scalar tensor
+        total_loss = Tensor(0.0)  # Start with proper scalar tensor
 
         for i, (loss, log_var) in enumerate(zip(losses, self.log_vars)):
             # Uncertainty weighting: L_total = Σ (1/(2σ²)) * L_i + log(σ²)

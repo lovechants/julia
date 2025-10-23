@@ -67,7 +67,7 @@ class Split(Function):
                 slice_obj[axis] = slice(start, end)
                 grad_input[tuple(slice_obj)] = grad_output.data
 
-        return Tensor(grad_input)
+        return Tensor(grad_input), None, None
 
 
 class DivMod(Function):
@@ -138,7 +138,7 @@ class DivMod(Function):
         if grad_divisor_from_remainder is not None:
             grad_divisor_total += grad_divisor_from_remainder
 
-        return Tensor(grad_dividend_total), Tensor(grad_divisor_total)
+        return Tensor(grad_dividend_total), Tensor(grad_divisor_total), None
 
 
 # Test the multi-output functions

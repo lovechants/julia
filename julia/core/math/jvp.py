@@ -1,6 +1,17 @@
 import numpy as np 
 from typing import Callable, List, Tuple, Union, Optional
 
+"""
+Why JVP or VJP 
+- memory-efficient training 
+- gradient checkpoints 
+- second order optimization for the hessian / newton 
+- linear attention 
+- efficient attention gradient computation 
+- meta learning + hyperparam optimization 
+- diff eq for nn 
+- RNN 
+"""
 
 class Dual: 
     """
