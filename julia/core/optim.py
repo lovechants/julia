@@ -9,6 +9,8 @@ from typing import Dict, Any, List
 import pickle
 
 
+# TODO: add other common optim -> reference missing mini-batch optim
+
 class LRScheduler(ABC):
     """Base class for LRS with state management"""
 
